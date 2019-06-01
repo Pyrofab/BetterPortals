@@ -27,6 +27,12 @@ allprojects {
 
     repositories {
         mavenCentral()
+        maven (url = "https://jitpack.io") {
+            name = "JitPack"
+        }
+        maven(url = "https://minecraft.curseforge.com/api/maven") {
+            name = "CurseForge"
+        }
     }
 
     tasks.withType<KotlinCompile> {
@@ -69,7 +75,13 @@ dependencies {
     compileOnly("net.fabricmc:fabric-language-kotlin:${v("fabric-kotlin")}")
 
     // Other libraries
-    compileOnly("org.apiguardian:apiguardian-api:1.0.0")
+    modCompile("com.github.Ladysnake:Satin:${v("satin")}")
+    modCompile("crochet:Crochet:${v("crochet")}")
+    compile("org.joml:joml:${v("joml")}")
+    compileOnly("com.google.code.findbugs:jsr305:3.0.2")
+
+    // Testing
+    testCompile("io.kotlintest:kotlintest-runner-junit5:3.0.4")
 }
 
 fun determineVersion(): String {
