@@ -3,14 +3,14 @@ package de.johni0702.minecraft.betterportals.client.view
 import de.johni0702.minecraft.betterportals.BetterPortalsMod
 import net.minecraft.block.material.Material
 import net.minecraft.client.Minecraft
-import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.client.multiplayer.WorldClient
 import net.minecraft.client.network.NetHandlerPlayClient
 import net.minecraft.stats.RecipeBook
 import net.minecraft.stats.StatisticsManager
 
 internal class ViewEntity constructor(world: WorldClient, connection: NetHandlerPlayClient)
-    : EntityPlayerSP(Minecraft.getMinecraft(), world, connection, StatisticsManager(), RecipeBook()) {
+    : ClientPlayerEntity(Minecraft.getMinecraft(), world, connection, StatisticsManager(), RecipeBook()) {
 
     init {
         // Negative ids cannot be used by the server

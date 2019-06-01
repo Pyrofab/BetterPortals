@@ -1,36 +1,36 @@
 package de.johni0702.minecraft.betterportals.net
 
+import com.raphydaphy.crochet.network.IPacket
+import com.raphydaphy.crochet.network.PacketHandler
 import de.johni0702.minecraft.betterportals.MOD_ID
-import net.minecraft.entity.player.EntityPlayerMP
+import net.fabricmc.fabric.api.network.ClientSidePacketRegistry
+import net.fabricmc.fabric.api.network.ServerSidePacketRegistry
+import net.minecraft.entity.player.ServerPlayerEntity
 import net.minecraft.network.Packet
+import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraftforge.fml.common.network.NetworkRegistry
-import net.minecraftforge.fml.common.network.simpleimpl.IMessage
+import net.minecraftforge.fml.common.network.simpleimpl.IPacket
 import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper
 import net.minecraftforge.fml.relauncher.Side
 
 object Net {
-    val INSTANCE: SimpleNetworkWrapper = NetworkRegistry.INSTANCE.newSimpleChannel(MOD_ID)
-
     init {
-        var nextId = 0
-        with(INSTANCE) {
-            registerMessage(CreateView.Handler(), CreateView::class.java, ++nextId, Side.CLIENT)
-            registerMessage(ViewData.Handler(), ViewData::class.java, ++nextId, Side.CLIENT)
-            registerMessage(DestroyView.Handler(), DestroyView::class.java, ++nextId, Side.CLIENT)
-            registerMessage(UsePortal.Handler(), UsePortal::class.java, ++nextId, Side.SERVER)
-            registerMessage(ChangeServerMainView.Handler(), ChangeServerMainView::class.java, ++nextId, Side.CLIENT)
-            registerMessage(LinkPortal.Handler(), LinkPortal::class.java, ++nextId, Side.CLIENT)
-            registerMessage(EntityUsePortal.Handler(), EntityUsePortal::class.java, ++nextId, Side.CLIENT)
-            registerMessage(Transaction.Handler(), Transaction::class.java, ++nextId, Side.CLIENT)
-            registerMessage(TransferToDimension.Handler(), TransferToDimension::class.java, ++nextId, Side.CLIENT)
-            registerMessage(TransferToDimensionDone.Handler(), TransferToDimensionDone::class.java, ++nextId, Side.SERVER)
+        with (ClientSidePacketRegistry.INSTANCE) {
+            register(CreateView.ID, CreateView)
+            register(ViewData.ID, ViewData)
+            register(DestroyView.ID, DestroyView)
+            register(ChangeServerMainView.ID, ChangeServerMainView)
+            register(LinkPortal.ID, LinkPortal)
+            register(EntityUsePortal.ID, EntityUsePortal)
+            register(Transaction.ID, Transaction.Handler)
+            register(TransferToDimension.ID, TransferToDimension)
+        }
+        with(ServerSidePacketRegistry.INSTANCE) {
+            register(UsePortal.ID, UsePortal)
+            register(TransferToDimensionDone.ID, TransferToDimensionDone)
         }
     }
-
 }
 
-fun IMessage.toPacket(): Packet<*> = Net.INSTANCE.getPacketFrom(this)
-fun IMessage.sendTo(players: Iterable<EntityPlayerMP>)
-        = toPacket().let { packet -> players.forEach { it.connection.sendPacket(packet) } }
-fun IMessage.sendTo(vararg players: EntityPlayerMP)
-        = toPacket().let { packet -> players.forEach { it.connection.sendPacket(packet) } }
+fun IPacket.sendTo(players: Iterable<ServerPlayerEntity>) { players.forEach { PacketHandler.sendToClient(this, it) } }
+fun IPacket.sendTo(vararg players: ServerPlayerEntity) { players.forEach { PacketHandler.sendToClient(this, it) } }

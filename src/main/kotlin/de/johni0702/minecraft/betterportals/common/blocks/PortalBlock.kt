@@ -5,14 +5,14 @@ import de.johni0702.minecraft.betterportals.LOGGER
 import de.johni0702.minecraft.betterportals.common.*
 import net.minecraft.block.Block
 import net.minecraft.entity.Entity
-import net.minecraft.init.Blocks
-import net.minecraft.util.EnumFacing
+import net.minecraft.block.Blocks
+import net.minecraft.util.math.Direction
 import net.minecraft.util.Rotation
-import net.minecraft.util.math.AxisAlignedBB
+import net.minecraft.util.math.BoundingBox
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.ChunkPos
 import net.minecraft.world.World
-import net.minecraft.world.WorldServer
+import net.minecraft.server.world.ServerWorld
 import net.minecraftforge.common.ForgeChunkManager
 import java.util.concurrent.CompletableFuture
 import kotlin.math.abs
@@ -61,12 +61,12 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
      * @param pos Position of one of the portal blocks of the local end of the portal
      * @return The remote world or `null` if the portal cannot be created for some reason
      */
-    fun getRemoteWorldFor(localWorld: WorldServer, pos: BlockPos): WorldServer?
+    fun getRemoteWorldFor(localWorld: ServerWorld, pos: BlockPos): ServerWorld?
 
     /**
      * Create a new portal entity.
      */
-    fun createPortalEntity(localEnd: Boolean, world: World, plane: EnumFacing.Plane, portalBlocks: Set<BlockPos>,
+    fun createPortalEntity(localEnd: Boolean, world: World, plane: Direction.Type, portalBlocks: Set<BlockPos>,
                            localDim: Int, localPos: BlockPos, localRot: Rotation): EntityType
 
     /**
@@ -77,14 +77,14 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
      * @return `true` if the local portal has been created, `false` otherwise
      */
     fun tryToLinkPortals(localWorld: World, pos: BlockPos): Boolean {
-        if (localWorld !is WorldServer) return false
+        if (localWorld !is ServerWorld) return false
 
         val (localBlocks, localAxis) = findPortalFrame(localWorld.makeBlockCache(), pos, false)
         if (localBlocks.isEmpty()) return false
 
         val localDim = localWorld.provider.dimension
         val localPos = localBlocks.minByAnyCoord()!!
-        val localRot = localAxis.toFacing(EnumFacing.AxisDirection.POSITIVE).toRotation()
+        val localRot = localAxis.toFacing(Direction.AxisDirection.POSITIVE).toRotation()
         val portalBlocks = localBlocks.mapTo(mutableSetOf()) { it.subtract(localPos).rotate(localRot.reverse) }
 
         val remoteWorld = getRemoteWorldFor(localWorld, pos) ?: return false
@@ -131,11 +131,11 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
      * @return Future of Pair of the remote position and rotation of the newly found/created portal
      */
     fun findOrCreateRemotePortal(
-            localWorld: WorldServer,
+            localWorld: ServerWorld,
             localPos: BlockPos,
-            plane: EnumFacing.Plane,
+            plane: Direction.Type,
             portalBlocks: Set<BlockPos>,
-            remoteWorld: WorldServer
+            remoteWorld: ServerWorld
     ): CompletableFuture<Pair<BlockPos, Rotation>> {
         // Calculate target position
         val movementFactor = localWorld.provider.movementFactor / remoteWorld.provider.movementFactor
@@ -179,7 +179,7 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
             val checkedPositions = mutableSetOf<BlockPos>()
 
             // Also find any spots where the portal is placed nicely on the ground (in case we don't find any frames)
-            val nicePositions = mutableListOf<Triple<BlockPos, Rotation, EnumFacing.Axis>>()
+            val nicePositions = mutableListOf<Triple<BlockPos, Rotation, Direction.Axis>>()
 
             val rotatedPortalBlocks: Map<Rotation, Set<BlockPos>> = Rotation.values().associateBy({ it }) { rot ->
                 portalBlocks.mapTo(mutableSetOf()) { it.rotate(rot) }
@@ -276,14 +276,14 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
             blockCache: BlockCache,
             startPos: BlockPos,
             filled: Boolean
-    ): Pair<Set<BlockPos>, EnumFacing.Axis> {
-        for (axis in EnumFacing.Axis.values()) {
+    ): Pair<Set<BlockPos>, Direction.Axis> {
+        for (axis in Direction.Axis.values()) {
             val result = findPortalFrame(blockCache, startPos, axis, filled)
             if (result.isNotEmpty()) {
                 return Pair(result, axis)
             }
         }
-        return Pair(emptySet(), EnumFacing.Axis.X)
+        return Pair(emptySet(), Direction.Axis.X)
     }
 
     /**
@@ -298,18 +298,18 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
     fun findPortalFrame(
             blockCache: BlockCache,
             startPos: BlockPos,
-            axis: EnumFacing.Axis,
+            axis: Direction.Axis,
             filled: Boolean
     ): Set<BlockPos> {
         val down = when(axis) {
-            EnumFacing.Axis.X, EnumFacing.Axis.Z -> EnumFacing.DOWN
-            EnumFacing.Axis.Y -> EnumFacing.SOUTH
+            Direction.Axis.X, Direction.Axis.Z -> Direction.DOWN
+            Direction.Axis.Y -> Direction.SOUTH
         }
         val up = down.opposite
 
         val right = when(axis) {
-            EnumFacing.Axis.X, EnumFacing.Axis.Z -> axis.toFacing(EnumFacing.AxisDirection.POSITIVE).rotateY()
-            EnumFacing.Axis.Y -> EnumFacing.EAST
+            Direction.Axis.X, Direction.Axis.Z -> axis.toFacing(Direction.AxisDirection.POSITIVE).rotateY()
+            Direction.Axis.Y -> Direction.EAST
         }
         val left = right.opposite
         val directions = listOf(right, down, left, up)
@@ -347,7 +347,7 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
         }
 
         // Check that the portal is of valid size
-        if (portalBlocks.toAxisAlignedBB().maxSideLength > maxPortalSize) return emptySet()
+        if (portalBlocks.toBoundingBox().maxSideLength > maxPortalSize) return emptySet()
 
         // Done
         return portalBlocks
@@ -371,11 +371,11 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
             blockCache: BlockCache,
             portalBlocks: Set<BlockPos>,
             pos: BlockPos,
-            axis: EnumFacing.Axis
+            axis: Direction.Axis
     ): Boolean {
         // Check if this is a block right above ground (or in case of horizontal portals, four above)
         // i.e. the lowest portal block is at `pos`
-        if (!(if (axis == EnumFacing.Axis.Y) {
+        if (!(if (axis == Direction.Axis.Y) {
             (1..3).all { blockCache[pos.down(it)].block == Blocks.AIR } && blockCache[pos.down(4)].material.isSolid
         } else {
             blockCache[pos.down()].material.isSolid
@@ -407,7 +407,7 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
     fun checkPortal(
             blockCache: BlockCache,
             portalBlocks: Set<BlockPos>,
-            axis: EnumFacing.Axis,
+            axis: Direction.Axis,
             filled: Boolean
     ): Boolean {
         val filling = if (filled) portalBlock else Blocks.AIR
@@ -429,7 +429,7 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
      * @param axis The axis of the portal
      * @param portalBlocks Set of positions of portal blocks (excluding frame and steps)
      */
-    fun placePortalFrame(world: World, axis: EnumFacing.Axis, portalBlocks: Set<BlockPos>) {
+    fun placePortalFrame(world: World, axis: Direction.Axis, portalBlocks: Set<BlockPos>) {
         // Calculate frame blocks (thick/continuous frame)
         val frameBlocks = mutableSetOf<BlockPos>()
         portalBlocks.forEach { portalBlock ->
@@ -449,11 +449,11 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
 
         // Make space inside, in front and behind of the portal and its frame
         (frameBlocks + portalBlocks).forEach { pos ->
-            if (axis != EnumFacing.Axis.Y && pos.y < minY) {
+            if (axis != Direction.Axis.Y && pos.y < minY) {
                 return@forEach // skip bottom-most layer for standing portals to keep blocks for the player to walk on
             }
-            for (i in if (axis == EnumFacing.Axis.Y) -3..2 else -1..1) {
-                world.setBlockToAir(pos.offset(axis.toFacing(EnumFacing.AxisDirection.POSITIVE), i))
+            for (i in if (axis == Direction.Axis.Y) -3..2 else -1..1) {
+                world.setBlockToAir(pos.offset(axis.toFacing(Direction.AxisDirection.POSITIVE), i))
             }
         }
 
@@ -463,11 +463,11 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
         }
 
         // Place step blocks for the player to step onto when leaving the portal
-        if (axis != EnumFacing.Axis.Y) { // except for portals the player has to fall through
+        if (axis != Direction.Axis.Y) { // except for portals the player has to fall through
             frameBlocks.forEach { framePos ->
                 // Steps are placed next to every frame block which has a portal block above it
-                if (framePos.offset(EnumFacing.UP) in portalBlocks) {
-                    for (direction in EnumFacing.AxisDirection.values()) {
+                if (framePos.offset(Direction.UP) in portalBlocks) {
+                    for (direction in Direction.AxisDirection.values()) {
                         val stepPos = framePos.offset(axis.toFacing(direction))
                         // Any other (already existing) solid blocks will do as well
                         if (!world.getBlockState(stepPos).material.isSolid) {
@@ -491,12 +491,12 @@ interface PortalBlock<EntityType> where EntityType: Entity, EntityType: Portal.L
         if (world.isRemote) return
         val portalBlocks = findPortalFrame(world.makeBlockCache(), pos, true).first
         if (portalBlocks.isEmpty()) { // Portal shell broken, portal unrecognizable; flood fill with air
-            world.getEntitiesWithinAABB(entityType, AxisAlignedBB(pos)).forEach {
+            world.getEntitiesWithinAABB(entityType, BoundingBox(pos)).forEach {
                 it.setDead()
             }
             world.setBlockToAir(pos)
         } else { // Portal shell still valid but shape or inners might have changed; needs to be check manually
-            val entities = world.getEntitiesWithinAABB(entityType, portalBlocks.toAxisAlignedBB())
+            val entities = world.getEntitiesWithinAABB(entityType, portalBlocks.toBoundingBox())
             if (entities.isEmpty()) { // No portals found, this is probably a vanilla portal which needs to be converted
                 // First, empty the frame
                 portalBlocks.forEach { world.setBlockToAir(it) }

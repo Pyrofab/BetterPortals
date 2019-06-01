@@ -1,27 +1,39 @@
 package de.johni0702.minecraft.betterportals.net
 
+import com.raphydaphy.crochet.network.IPacket
+import com.raphydaphy.crochet.network.MessageHandler
 import de.johni0702.minecraft.betterportals.LOGGER
+import de.johni0702.minecraft.betterportals.MOD_ID
 import de.johni0702.minecraft.betterportals.common.entity.AbstractPortalEntity
 import de.johni0702.minecraft.betterportals.common.sync
 import io.netty.buffer.ByteBuf
-import net.minecraftforge.fml.common.network.simpleimpl.IMessage
-import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler
-import net.minecraftforge.fml.common.network.simpleimpl.MessageContext
+import net.fabricmc.fabric.api.network.PacketContext
+import net.minecraft.util.Identifier
+import net.minecraft.util.PacketByteBuf
+import net.minecraftforge.fml.common.network.simpleimpl.IPacket
+import net.minecraftforge.fml.common.network.simpleimpl.IPacketHandler
+import net.minecraftforge.fml.common.network.simpleimpl.PacketContext
 
 class UsePortal(
         var entityId: Int = 0
-) : IMessage {
+) : IPacket {
 
-    override fun fromBytes(buf: ByteBuf) {
+    override fun getID() = ID
+
+    override fun read(buf: PacketByteBuf) {
         entityId = buf.readInt()
     }
 
-    override fun toBytes(buf: ByteBuf) {
+    override fun write(buf: PacketByteBuf) {
         buf.writeInt(entityId)
     }
 
-    internal class Handler : IMessageHandler<UsePortal, IMessage> {
-        override fun onMessage(message: UsePortal, ctx: MessageContext): IMessage? {
+    internal companion object Handler : MessageHandler<UsePortal>() {
+        val ID = Identifier(MOD_ID, "use_portal")
+
+        override fun create() = UsePortal()
+
+        override fun handle(ctx: PacketContext, message: UsePortal) {
             ctx.sync {
                 val player = ctx.serverHandler.player
                 if (player.connection.targetPos != null) {
@@ -35,7 +47,6 @@ class UsePortal(
                 }
                 portalEntity.usePortal(player)
             }
-            return null
         }
     }
 }

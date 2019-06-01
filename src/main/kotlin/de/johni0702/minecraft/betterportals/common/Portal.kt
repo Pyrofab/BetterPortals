@@ -1,53 +1,54 @@
 package de.johni0702.minecraft.betterportals.common
 
-import net.minecraft.nbt.NBTBase
-import net.minecraft.nbt.NBTTagCompound
-import net.minecraft.nbt.NBTTagList
-import net.minecraft.util.EnumFacing
-import net.minecraft.util.Rotation
-import net.minecraft.util.math.AxisAlignedBB
+import net.fabricmc.fabric.api.util.NbtType
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.ListTag
+import net.minecraft.nbt.Tag
+import net.minecraft.util.BlockRotation
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.BoundingBox
+import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3d
-import net.minecraftforge.common.util.Constants
-import javax.vecmath.Matrix4d
+import org.joml.Matrix4d
 
 interface Portal {
-    val plane: EnumFacing.Plane
+    val plane: Direction.Type
     val relativeBlocks: Set<BlockPos>
     val localDimension: Int
     val localPosition: BlockPos
-    val localRotation: Rotation
+    val localRotation: BlockRotation
     val remoteDimension: Int?
     val remotePosition: BlockPos
-    val remoteRotation: Rotation
+    val remoteRotation: BlockRotation
 
-    val localFacing: EnumFacing
+    val localFacing: Direction
         get() = when(plane) {
-            EnumFacing.Plane.VERTICAL -> localRotation.facing
-            EnumFacing.Plane.HORIZONTAL -> EnumFacing.UP
+            Direction.Type.VERTICAL -> localRotation.facing
+            Direction.Type.HORIZONTAL -> Direction.UP
         }
-    val remoteFacing: EnumFacing
+    val remoteFacing: Direction
         get() = when(plane) {
-            EnumFacing.Plane.VERTICAL -> remoteRotation.facing
-            EnumFacing.Plane.HORIZONTAL -> EnumFacing.UP
+            Direction.Type.VERTICAL -> remoteRotation.facing
+            Direction.Type.HORIZONTAL -> Direction.UP
         }
 
-    val localAxis: EnumFacing.Axis get() = localFacing.axis
-    val remoteAxis: EnumFacing.Axis get() = remoteFacing.axis
+    val localAxis: Direction.Axis get() = localFacing.axis
+    val remoteAxis: Direction.Axis get() = remoteFacing.axis
 
     fun BlockPos.toRemote(): BlockPos = rotate(remoteRotation).add(remotePosition)
     fun BlockPos.toLocal(): BlockPos = rotate(localRotation).add(localPosition)
 
-    fun Vec3d.toSpace(pos: BlockPos, rotation: Rotation): Vec3d =
-            subtract(0.5, 0.0, 0.5).rotate(rotation).addVector(0.5, 0.0, 0.5).add(pos.to3d())
-    fun Vec3d.fromSpace(pos: BlockPos, rotation: Rotation): Vec3d =
-            subtract(pos.to3d()).subtract(0.5, 0.0, 0.5).rotate(rotation.reverse).addVector(0.5, 0.0, 0.5)
+    fun Vec3d.toSpace(pos: BlockPos, rotation: BlockRotation): Vec3d =
+            subtract(0.5, 0.0, 0.5).rotate(rotation).add(0.5, 0.0, 0.5).add(pos.to3d())
+    fun Vec3d.fromSpace(pos: BlockPos, rotation: BlockRotation): Vec3d =
+            subtract(pos.to3d()).subtract(0.5, 0.0, 0.5).rotate(rotation.reverse).add(0.5, 0.0, 0.5)
     fun Vec3d.toRemote(): Vec3d = toSpace(remotePosition, remoteRotation)
     fun Vec3d.toLocal(): Vec3d = toSpace(localPosition, localRotation)
     fun Vec3d.fromRemote(): Vec3d = fromSpace(remotePosition, remoteRotation)
     fun Vec3d.fromLocal(): Vec3d = fromSpace(localPosition, localRotation)
 
-    val localToRemoteMatrix: Matrix4d get() =
+    val localToRemoteMatrix: Matrix4d
+        get() =
         Mat4d.add((remotePosition.to3d() + Vec3d(0.5, 0.0, 0.5)).toJavaX()) *
                 Mat4d.rotYaw((remoteRotation - localRotation).degrees) *
                 Mat4d.sub((localPosition.to3d() + Vec3d(0.5, 0.0, 0.5)).toJavaX())
@@ -55,69 +56,69 @@ interface Portal {
     val localBlocks get() = relativeBlocks.map { it.toLocal() }.toSet()
     val remoteBlocks get() = relativeBlocks.map { it.toRemote() }.toSet()
 
-    val localBoundingBox: AxisAlignedBB get() = localBlocks.toAxisAlignedBB()
-    val remoteBoundingBox: AxisAlignedBB get() = remoteBlocks.toAxisAlignedBB()
+    val localBoundingBox: BoundingBox get() = localBlocks.toBoundingBox()
+    val remoteBoundingBox: BoundingBox get() = remoteBlocks.toBoundingBox()
 
-    fun writePortalToNBT(): NBTTagCompound = NBTTagCompound().apply {
-        setInteger("Plane", plane.ordinal)
-        setTag("Blocks", NBTTagList().apply {
-            relativeBlocks.forEach { appendTag(NBTTagCompound().setXYZ(it)) }
+    fun writePortalToNBT(): CompoundTag = CompoundTag().apply {
+        putInt("Plane", plane.ordinal)
+        put("Blocks", ListTag().apply {
+            relativeBlocks.forEach { add(CompoundTag().setXYZ(it)) }
         })
-        setTag("Local", NBTTagCompound().apply {
+        put("Local", CompoundTag().apply {
             setXYZ(localPosition)
-            setInteger("Rotation", localRotation.ordinal)
-            setInteger("Dim", localDimension)
+            putInt("Rotation", localRotation.ordinal)
+            putInt("Dim", localDimension)
         })
         val remoteDimension = this@Portal.remoteDimension
         if (remoteDimension != null) {
-            setTag("Remote", NBTTagCompound().apply {
+            put("Remote", CompoundTag().apply {
                 setXYZ(remotePosition)
-                setInteger("Rotation", remoteRotation.ordinal)
-                setInteger("Dim", remoteDimension)
+                putInt("Rotation", remoteRotation.ordinal)
+                putInt("Dim", remoteDimension)
             })
         }
     }
 
     interface Linkable : Portal {
-        fun link(remoteDimension: Int, remotePosition: BlockPos, remoteRotation: Rotation)
+        fun link(remoteDimension: Int, remotePosition: BlockPos, remoteRotation: BlockRotation)
     }
 
     interface Mutable : Portal.Linkable {
-        override var plane: EnumFacing.Plane
+        override var plane: Direction.Type
         override var relativeBlocks: Set<BlockPos>
         override var localDimension: Int
         override var localPosition: BlockPos
-        override var localRotation: Rotation
+        override var localRotation: BlockRotation
         override var remoteDimension: Int?
         override var remotePosition: BlockPos
-        override var remoteRotation: Rotation
+        override var remoteRotation: BlockRotation
 
-        override fun link(remoteDimension: Int, remotePosition: BlockPos, remoteRotation: Rotation) {
+        override fun link(remoteDimension: Int, remotePosition: BlockPos, remoteRotation: BlockRotation) {
             this.remoteDimension = remoteDimension
             this.remotePosition = remotePosition
             this.remoteRotation = remoteRotation
         }
 
-        fun readPortalFromNBT(nbt: NBTBase?) {
-            (nbt as? NBTTagCompound)?.apply {
-                plane = EnumFacing.Plane.values()[getInteger("Plane")]
-                relativeBlocks = getTagList("Blocks", Constants.NBT.TAG_COMPOUND).map {
-                    (it as NBTTagCompound).getXYZ()
+        fun readPortalFromNBT(nbt: Tag?) {
+            (nbt as? CompoundTag)?.apply {
+                plane = Direction.Type.values()[getInt("Plane")]
+                relativeBlocks = getList("Blocks", NbtType.COMPOUND).map {
+                    (it as CompoundTag).getXYZ()
                 }.toSet()
-                getCompoundTag("Local").apply {
+                getCompound("Local").apply {
                     localPosition = getXYZ()
-                    localRotation = Rotation.values()[getInteger("Rotation")]
-                    localDimension = getInteger("Dim")
+                    localRotation = BlockRotation.values()[getInt("Rotation")]
+                    localDimension = getInt("Dim")
                 }
-                if (hasKey("Remote")) {
-                    getCompoundTag("Remote").apply {
+                if (containsKey("Remote")) {
+                    getCompound("Remote").apply {
                         remotePosition = getXYZ()
-                        remoteRotation = Rotation.values()[getInteger("Rotation")]
-                        remoteDimension = getInteger("Dim")
+                        remoteRotation = BlockRotation.values()[getInt("Rotation")]
+                        remoteDimension = getInt("Dim")
                     }
                 } else {
                     remotePosition = BlockPos.ORIGIN
-                    remoteRotation = Rotation.NONE
+                    remoteRotation = BlockRotation.NONE
                     remoteDimension = null
                 }
             }

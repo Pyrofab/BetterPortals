@@ -1,39 +1,50 @@
 package de.johni0702.minecraft.betterportals.net
 
+import com.raphydaphy.crochet.network.IPacket
+import com.raphydaphy.crochet.network.MessageHandler
 import de.johni0702.minecraft.betterportals.LOGGER
+import de.johni0702.minecraft.betterportals.MOD_ID
 import de.johni0702.minecraft.betterportals.common.entity.AbstractPortalEntity
 import de.johni0702.minecraft.betterportals.common.readEnum
 import de.johni0702.minecraft.betterportals.common.sync
 import de.johni0702.minecraft.betterportals.common.writeEnum
 import io.netty.buffer.ByteBuf
+import net.fabricmc.fabric.api.network.PacketContext
 import net.minecraft.network.PacketBuffer
-import net.minecraftforge.fml.common.network.simpleimpl.IMessage
-import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler
-import net.minecraftforge.fml.common.network.simpleimpl.MessageContext
+import net.minecraft.util.Identifier
+import net.minecraft.util.PacketByteBuf
+import net.minecraftforge.fml.common.network.simpleimpl.IPacket
+import net.minecraftforge.fml.common.network.simpleimpl.IPacketHandler
+import net.minecraftforge.fml.common.network.simpleimpl.PacketContext
 
 class EntityUsePortal(
         var phase: Phase = Phase.BEFORE,
         var entityId: Int = 0,
         var portalId: Int = 0
-) : IMessage {
-    override fun fromBytes(buf: ByteBuf) {
-        with(PacketBuffer(buf)) {
+) : IPacket {
+
+    override fun getID() = ID
+
+    override fun read(buf: PacketByteBuf) {
+        with(buf) {
             phase = readEnum()
             entityId = readVarInt()
             portalId = readVarInt()
         }
     }
 
-    override fun toBytes(buf: ByteBuf) {
-        with(PacketBuffer(buf)) {
+    override fun write(buf: PacketByteBuf) {
+        with(buf) {
             writeEnum(phase)
             writeVarInt(entityId)
             writeVarInt(portalId)
         }
     }
 
-    internal class Handler : IMessageHandler<EntityUsePortal, IMessage> {
-        override fun onMessage(message: EntityUsePortal, ctx: MessageContext): IMessage? {
+    internal companion object Handler : MessageHandler<EntityUsePortal>() {
+        val ID = Identifier(MOD_ID, "entity_use_portal")
+        override fun create() = EntityUsePortal()
+        override fun handle(ctx: PacketContext, message: EntityUsePortal) {
             ctx.sync {
                 val world = ctx.clientHandler.clientWorldController
                 val portal = world.getEntityByID(message.portalId) as? AbstractPortalEntity
@@ -54,7 +65,6 @@ class EntityUsePortal(
                     Phase.AFTER -> portal.afterUsePortal(message.entityId)
                 }
             }
-            return null
         }
     }
 

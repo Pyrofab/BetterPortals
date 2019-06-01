@@ -1,8 +1,8 @@
 package de.johni0702.minecraft.betterportals.common.entity
 
 import net.minecraft.block.Block
-import net.minecraft.init.Blocks
-import net.minecraft.util.EnumFacing
+import net.minecraft.block.Blocks
+import net.minecraft.util.math.Direction
 import net.minecraft.util.Rotation
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
@@ -13,7 +13,7 @@ abstract class EndPortalEntity(
         localDimension: Int, localPosition: BlockPos, localRotation: Rotation,
         remoteDimension: Int, remotePosition: BlockPos, remoteRotation: Rotation
 ) : OneWayPortalEntity(
-        isTailEnd, world, EnumFacing.Plane.HORIZONTAL, relativeBlocks,
+        isTailEnd, world, Direction.Type.HORIZONTAL, relativeBlocks,
         localDimension, localPosition, localRotation,
         remoteDimension,remotePosition, remoteRotation
 )

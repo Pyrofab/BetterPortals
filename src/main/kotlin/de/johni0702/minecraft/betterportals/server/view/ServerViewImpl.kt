@@ -9,8 +9,10 @@ import de.johni0702.minecraft.betterportals.net.sendTo
 import io.netty.channel.embedded.EmbeddedChannel
 import net.minecraft.advancements.CriteriaTriggers
 import net.minecraft.entity.EntityTrackerEntry
-import net.minecraft.entity.player.EntityPlayerMP
+import net.minecraft.entity.player.ServerPlayerEntity
 import net.minecraft.server.management.PlayerChunkMapEntry
+import net.minecraft.server.network.EntityTrackerEntry
+import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.DimensionType
 import net.minecraftforge.common.MinecraftForge
@@ -18,10 +20,10 @@ import net.minecraftforge.event.world.ChunkWatchEvent
 import net.minecraftforge.fml.common.FMLCommonHandler
 
 internal class ServerViewImpl(
-        override val manager: ServerViewManagerImpl,
-        override val id: Int,
-        override var camera: EntityPlayerMP,
-        var channel: EmbeddedChannel?
+    override val manager: ServerViewManagerImpl,
+    override val id: Int,
+    override var camera: ServerPlayerEntity,
+    var channel: EmbeddedChannel?
 ) : ServerView, AReferenceCounted {
     override var refCnt: Int = 1
 
@@ -41,8 +43,8 @@ internal class ServerViewImpl(
         val camera = this.camera
 
         LOGGER.info("Swapping main view {}/{}/{} with {}/{}/{}",
-                player.posX, player.posY, player.posZ,
-                camera.posX, camera.posY, camera.posZ)
+                player.x, player.y, player.z,
+                camera.x, camera.y, camera.z)
 
         retain()
 
@@ -54,16 +56,16 @@ internal class ServerViewImpl(
         manager.flushPackets()
         Transaction.start(player)
 
-        // TODO set enteredNetherPosition (see EntityPlayerMP#changeDimension)
+        // TODO set enteredNetherPosition (see ServerPlayerEntity#changeDimension)
 
-        fun unregister(player: EntityPlayerMP): Pair<List<PlayerChunkMapEntry>, List<EntityTrackerEntry>> {
+        fun unregister(player: ServerPlayerEntity): Pair<List<PlayerChunkMapEntry>, List<EntityTrackerEntry>> {
             val posX = player.managedPosX.toInt() shr 4
-            val posZ = player.managedPosZ.toInt() shr 4
-            val viewRadius = manager.server.playerList.viewDistance
+            val z = player.managedz.toInt() shr 4
+            val viewRadius = manager.server.PlayerManager.viewDistance
             val playerChunkMap = player.serverWorld.playerChunkMap
             val knownChunks = mutableListOf<PlayerChunkMapEntry>()
             for (x in posX - viewRadius..posX + viewRadius) {
-                for (z in posZ - viewRadius..posZ + viewRadius) {
+                for (z in z - viewRadius..z + viewRadius) {
                     val entry = playerChunkMap.getEntry(x, z)
                     if (entry != null && entry.players.remove(player)) {
                         if (entry.isSentToPlayers) {
@@ -106,12 +108,12 @@ internal class ServerViewImpl(
 
         manager.mainView = this
 
-        manager.server.playerList.updatePermissionLevel(player)
+        manager.server.PlayerManager.updatePermissionLevel(player)
 
         swapPosRot(player, camera)
 
         player.managedPosX = camera.managedPosX.also { camera.managedPosX = player.managedPosX }
-        player.managedPosZ = camera.managedPosZ.also { camera.managedPosZ = player.managedPosZ }
+        player.managedz = camera.managedz.also { camera.managedz = player.managedz }
 
         player.connection.captureCurrentPosition()
 
@@ -123,7 +125,7 @@ internal class ServerViewImpl(
         player.interactionManager.setWorld(newWorld)
         camera.interactionManager.setWorld(oldWorld)
 
-        fun register(player: EntityPlayerMP, knownRegistrations: Pair<List<PlayerChunkMapEntry>, List<EntityTrackerEntry>>) {
+        fun register(player: ServerPlayerEntity, knownRegistrations: Pair<List<PlayerChunkMapEntry>, List<EntityTrackerEntry>>) {
             val (knownChunks, knownEntities) = knownRegistrations
 
             knownChunks.forEach {
@@ -149,7 +151,7 @@ internal class ServerViewImpl(
         CriteriaTriggers.CHANGED_DIMENSION.trigger(player, oldWorld.provider.dimensionType, newWorld.provider.dimensionType)
         if (oldWorld.provider.dimensionType == DimensionType.NETHER
                 && newWorld.provider.dimensionType == DimensionType.OVERWORLD) {
-            CriteriaTriggers.NETHER_TRAVEL.trigger(player, Vec3d(player.posX, player.posY, player.posZ))
+            CriteriaTriggers.NETHER_TRAVEL.trigger(player, Vec3d(player.posX, player.y, player.z))
         }
 
         Transaction.end(player)

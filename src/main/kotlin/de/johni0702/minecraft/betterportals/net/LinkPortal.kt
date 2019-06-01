@@ -1,24 +1,32 @@
 package de.johni0702.minecraft.betterportals.net
 
+import com.raphydaphy.crochet.network.IPacket
+import com.raphydaphy.crochet.network.MessageHandler
 import de.johni0702.minecraft.betterportals.BetterPortalsMod
 import de.johni0702.minecraft.betterportals.LOGGER
+import de.johni0702.minecraft.betterportals.MOD_ID
 import de.johni0702.minecraft.betterportals.common.entity.AbstractPortalEntity
 import de.johni0702.minecraft.betterportals.common.sync
 import io.netty.buffer.ByteBuf
-import net.minecraft.nbt.NBTTagCompound
+import net.fabricmc.fabric.api.network.PacketContext
+import net.minecraft.nbt.CompoundTag
 import net.minecraft.network.PacketBuffer
-import net.minecraftforge.fml.common.network.simpleimpl.IMessage
-import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler
-import net.minecraftforge.fml.common.network.simpleimpl.MessageContext
+import net.minecraft.util.Identifier
+import net.minecraft.util.PacketByteBuf
+import net.minecraftforge.fml.common.network.simpleimpl.IPacket
+import net.minecraftforge.fml.common.network.simpleimpl.IPacketHandler
+import net.minecraftforge.fml.common.network.simpleimpl.PacketContext
 
 class LinkPortal(
         var entityId: Int = 0,
-        var nbt: NBTTagCompound? = null,
+        var nbt: CompoundTag? = null,
         var viewId: Int? = 0
-) : IMessage {
+) : IPacket {
 
-    override fun fromBytes(buf: ByteBuf) {
-        with(PacketBuffer(buf)) {
+    override fun getID() = ID
+
+    override fun read(buf: PacketByteBuf) {
+        with(buf) {
             entityId = readVarInt()
             nbt = readCompoundTag()
             viewId = if (readBoolean()) {
@@ -29,8 +37,8 @@ class LinkPortal(
         }
     }
 
-    override fun toBytes(buf: ByteBuf) {
-        with(PacketBuffer(buf)) {
+    override fun write(buf: PacketByteBuf) {
+        with(buf) {
             writeVarInt(entityId)
             writeCompoundTag(nbt)
             val viewId = viewId
@@ -44,8 +52,10 @@ class LinkPortal(
         }
     }
 
-    internal class Handler : IMessageHandler<LinkPortal, IMessage> {
-        override fun onMessage(message: LinkPortal, ctx: MessageContext): IMessage? {
+    internal companion object Handler : MessageHandler<LinkPortal>() {
+        val ID = Identifier(MOD_ID, "link_portal")
+        override fun create() = LinkPortal()
+        override fun handle(ctx: PacketContext, message: LinkPortal) {
             ctx.sync {
                 val world = ctx.clientHandler.clientWorldController
                 val entity = world.getEntityByID(message.entityId) as? AbstractPortalEntity
@@ -67,7 +77,6 @@ class LinkPortal(
                     entity.view = null
                 }
             }
-            return null
         }
     }
 }

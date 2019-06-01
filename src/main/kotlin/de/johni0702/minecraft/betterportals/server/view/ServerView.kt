@@ -2,7 +2,8 @@ package de.johni0702.minecraft.betterportals.server.view
 
 import de.johni0702.minecraft.betterportals.common.view.View
 import io.netty.util.ReferenceCounted
-import net.minecraft.entity.player.EntityPlayerMP
+import net.minecraft.entity.player.ServerPlayerEntity
+import net.minecraft.server.network.ServerPlayerEntity
 
 /**
  * New views can be created by calling [de.johni0702.minecraft.betterportals.server.view.ServerViewManager.createView].
@@ -11,5 +12,5 @@ import net.minecraft.entity.player.EntityPlayerMP
  */
 interface ServerView : View, ReferenceCounted {
     override val manager: ServerViewManager
-    override val camera: EntityPlayerMP
+    override val camera: ServerPlayerEntity
 }

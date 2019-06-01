@@ -1,7 +1,7 @@
 package de.johni0702.minecraft.betterportals.common.view
 
 import de.johni0702.minecraft.betterportals.client.view.ClientView
-import net.minecraft.entity.player.EntityPlayer
+import net.minecraft.entity.player.PlayerEntity
 
 /**
  * Provides a view of a different world to a player.
@@ -34,7 +34,7 @@ interface View {
      * entity which is invisible to all players and does not interact with the world.
      * While the [camera] may change after [makeMainView], the world it's in will not.
      */
-    val camera: EntityPlayer
+    val camera: PlayerEntity
 
     /**
      * Changes this view to be the main view by swapping [camera] entities and designation with the [current main view]

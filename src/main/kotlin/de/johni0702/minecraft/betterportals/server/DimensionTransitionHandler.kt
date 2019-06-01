@@ -5,12 +5,14 @@ import de.johni0702.minecraft.betterportals.net.Transaction
 import de.johni0702.minecraft.betterportals.net.TransferToDimension
 import de.johni0702.minecraft.betterportals.net.sendTo
 import de.johni0702.minecraft.betterportals.server.view.viewManager
-import net.minecraft.entity.player.EntityPlayerMP
-import net.minecraft.server.management.PlayerList
+import net.minecraft.entity.player.ServerPlayerEntity
+import net.minecraft.server.PlayerManager
+import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.world.dimension.DimensionType
 import net.minecraftforge.common.util.ITeleporter
 
 object DimensionTransitionHandler {
-    fun transferPlayerToDimension(playerList: PlayerList, player: EntityPlayerMP, dimension: Int, teleporter: ITeleporter) {
+    fun transferPlayerToDimension(player: ServerPlayerEntity, dimension: DimensionType) {
         val world = player.server!!.getWorld(dimension)
         val viewManager = player.viewManager
 
@@ -21,7 +23,7 @@ object DimensionTransitionHandler {
         // Create a new view entity in the destination dimension
         val view = viewManager.createView(world, player.pos) {
             // Let the teleporter position the view entity
-            playerList.transferEntityToWorld(this, player.dimension, world, world, teleporter)
+            this.changeDimension(player.dimension)
         }
 
         // Start transaction to allow the handler of TransferToDimension to update the camera in the target dimension before switching to it
@@ -40,7 +42,7 @@ object DimensionTransitionHandler {
         Transaction.end(player)
 
         // Finally send a poslook packet to have the client confirm the teleport (and to be able to discard any UsePortal messages until the confirmation)
-        player.connection.setPlayerLocation(player.posX, player.posY, player.posZ, player.rotationYaw, player.rotationPitch)
+        player.connection.setPlayerLocation(player.posX, player.y, player.z, player.rotationYaw, player.rotationPitch)
         viewManager.flushPackets()
     }
 }

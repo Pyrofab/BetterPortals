@@ -4,6 +4,8 @@ import de.johni0702.minecraft.betterportals.BetterPortalsMod
 import de.johni0702.minecraft.betterportals.LOGGER
 import de.johni0702.minecraft.betterportals.common.maybeValue
 import net.minecraft.client.Minecraft
+import net.minecraft.client.MinecraftClient
+import net.minecraft.network.ClientConnection
 import net.minecraft.network.NetworkManager
 import java.util.*
 import java.util.concurrent.FutureTask
@@ -34,7 +36,7 @@ internal class ViewDemuxingTaskQueue(
 
             // Calling from any netty thread? must the the active server main view
             // ("active" at time of task execution because a previous task may have changed the active server main view)
-            NetworkManager.CLIENT_NIO_EVENTLOOP.maybeValue?.any { it.inEventLoop() } ?: false
+            ClientConnection.CLIENT_IO_GROUP.maybeValue?.any { it.inEventLoop() } ?: false
                     || NetworkManager.CLIENT_EPOLL_EVENTLOOP.maybeValue?.any { it.inEventLoop() } ?: false
                     || NetworkManager.CLIENT_LOCAL_EVENTLOOP.maybeValue?.any { it.inEventLoop() } ?: false -> {
                 { viewManager.serverMainView }
@@ -43,10 +45,10 @@ internal class ViewDemuxingTaskQueue(
             // No idea, let's just use the main view
             else -> {
                 val exception = Exception()
-                // Find the method/class calling Minecraft.addScheduledTask
+                // Find the method/class calling MinecraftClient.addScheduledTask
                 val caller = exception.stackTrace
-                        .dropWhile { it.className != Minecraft::class.java.name } // Skip until we're in addScheduledTask
-                        .dropWhile { it.className == Minecraft::class.java.name } // Skip past addScheduledTask
+                        .dropWhile { it.className != MinecraftClient::class.java.name } // Skip until we're in addScheduledTask
+                        .dropWhile { it.className == MinecraftClient::class.java.name } // Skip past addScheduledTask
                         .firstOrNull()
                 // We know these to be fine with the main view, don't even bother warning
                 val confirmedBadCallers = listOf(

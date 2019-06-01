@@ -23,7 +23,7 @@ class TransferToDimensionRenderer(
         private val whenDone: () -> Unit,
         val duration: Duration = Duration.ofSeconds(10)
 ) {
-    private val mc = Minecraft.getMinecraft()
+    private val mc = MinecraftClient.getMinecraft()
 
     private val shader = ShaderManager(mc.resourceManager, "betterportals:dimension_transition")
     private val eventHandler = EventHandler()

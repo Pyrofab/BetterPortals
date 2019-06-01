@@ -1,39 +1,38 @@
 package de.johni0702.minecraft.betterportals.client.renderer
 
+import com.mojang.blaze3d.platform.GlStateManager
 import de.johni0702.minecraft.betterportals.client.glClipPlane
 import de.johni0702.minecraft.betterportals.common.*
 import de.johni0702.minecraft.betterportals.common.entity.AbstractPortalEntity
-import net.minecraft.client.Minecraft
-import net.minecraft.client.entity.EntityPlayerSP
-import net.minecraft.client.renderer.BufferBuilder
-import net.minecraft.client.renderer.GlStateManager
-import net.minecraft.client.renderer.Tessellator
-import net.minecraft.client.renderer.culling.Frustum
-import net.minecraft.client.renderer.entity.Render
-import net.minecraft.client.renderer.entity.RenderManager
-import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher.*
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats
-import net.minecraft.client.shader.ShaderManager
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gl.JsonGlProgram
+import net.minecraft.client.network.ClientPlayerEntity
+import net.minecraft.client.render.BufferBuilder
+import net.minecraft.client.render.Tessellator
+import net.minecraft.client.render.VertexFormats
+import net.minecraft.client.render.block.entity.BlockEntityRenderDispatcher.*
+import net.minecraft.client.render.entity.EntityRenderDispatcher
+import net.minecraft.client.render.entity.EntityRenderer
 import net.minecraft.entity.Entity
-import net.minecraft.util.EnumFacing
-import net.minecraft.util.ResourceLocation
-import net.minecraft.util.math.AxisAlignedBB
+import net.minecraft.util.Identifier
+import net.minecraft.util.math.BoundingBox
+import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3d
 import org.lwjgl.opengl.GL11
 import kotlin.math.sign
 
-abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: RenderManager) : Render<T>(renderManager) {
+abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: EntityRenderDispatcher) : EntityRenderer<T>(renderManager) {
 
     companion object {
 
-        private val mc: Minecraft = Minecraft.getMinecraft()
+        private val mc: MinecraftClient = MinecraftClient.getInstance()
 
         private var portalStack = mutableListOf<Instance<*>>()
 
         private val stencilStack = mutableListOf<Boolean>()
         private val clippingStack = mutableListOf<Boolean>()
 
-        fun beforeRender(renderManager: RenderManager, entity: Entity, partialTicks: Float): Boolean {
+        fun beforeRender(renderManager: EntityRenderDispatcher, entity: Entity, partialTicks: Float): Boolean {
             if (entity is Portal) return true
             val portal = ViewRenderPlan.CURRENT?.let { instance ->
                 // If we're not rendering our own world (i.e. if we're looking through a portal)
@@ -45,11 +44,11 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
                 // from the below, we might see the head of entities whose feet are below the portal y
                 // Same goes the other way around
                 val entityBottomPos = entity.syncPos
-                val entityTopPos = entityBottomPos + Vec3d(0.0, entity.entityBoundingBox.sizeY, 0.0)
+                val entityTopPos = entityBottomPos + Vec3d(0.0, entity.boundingBox.sizeY, 0.0)
                 val relativeBottomPosition = entityBottomPos.subtract(portalPos)
                 val relativeTopPosition = entityTopPos.subtract(portalPos)
-                if (relativeBottomPosition.dotProduct(facing.directionVec.to3d()) > 0
-                    && relativeTopPosition.dotProduct(facing.directionVec.to3d()) > 0) return false
+                if (relativeBottomPosition.dotProduct(facing.vector.to3d()) > 0
+                    && relativeTopPosition.dotProduct(facing.vector.to3d()) > 0) return false
                 return@let portal
             }
 
@@ -57,23 +56,23 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
             // might be looking at right now (i.e. on the other side of any portals in our world)
             // Actually, we do still want to render it outside the portal frame but only on the right side,
             // because there it'll be visible when looking at the portal from the side.
-            val inPortals = entity.world.getEntitiesWithinAABB(
+            val inPortals = entity.world.getEntities(
                     AbstractPortalEntity::class.java,
-                    entity.renderBoundingBox,
+                    entity.visibilityBoundingBox,
                     { it?.localPosition != portal?.remotePosition } // ignore remote end of current portal
             )
             // FIXME can't deal with entities which are in more than one portal at the same time
             inPortals.firstOrNull()?.let {
                 val entityPos = entity.syncPos + entity.eyeOffset
-                val relativePosition = entityPos - it.localPosition.to3d().addVector(0.5, 0.0, 0.5)
+                val relativePosition = entityPos - it.localPosition.to3d().add(0.5, 0.0, 0.5)
                 val portalFacing = it.localFacing
-                val portalDir = portalFacing.directionVec.to3d()
-                val planeDir = portalDir.scale(sign(relativePosition.dotProduct(portalDir)))
-                val portalX = it.posX - staticPlayerX
-                val portalY = it.posY - staticPlayerY
-                val portalZ = it.posZ - staticPlayerZ
-                val renderer = renderManager.getEntityRenderObject<AbstractPortalEntity>(it) as AbstractRenderPortal
-                val planeOffset = renderer.createInstance(it, portalX, portalY, portalZ, partialTicks).viewFacing.directionVec.to3d().scale(-0.5)
+                val portalDir = portalFacing.vector.to3d()
+                val planeDir = portalDir.multiply(sign(relativePosition.dotProduct(portalDir)))
+                val portalX = it.x - renderOffsetX
+                val portalY = it.y - renderOffsetY
+                val portalZ = it.z - renderOffsetZ
+                val renderer = renderManager.getRenderer<AbstractPortalEntity, AbstractRenderPortal<AbstractPortalEntity>>(it) as AbstractRenderPortal
+                val planeOffset = renderer.createInstance(it, portalX, portalY, portalZ, partialTicks).viewFacing.vector.to3d().multiply(-0.5)
                 val planePos = Vec3d(portalX, portalY, portalZ) + planeOffset
                 glClipPlane(GL11.GL_CLIP_PLANE4, planeDir, planePos)
                 GL11.glEnable(GL11.GL_CLIP_PLANE4) // FIXME don't hard-code clipping plane id
@@ -81,7 +80,7 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
             clippingStack.add(inPortals.isNotEmpty())
 
             GL11.glDisable(GL11.GL_CLIP_PLANE5)
-            if (portal != null && entity.renderBoundingBox.intersects(portal.remoteBoundingBox)) {
+            if (portal != null && entity.visibilityBoundingBox.intersects(portal.remoteBoundingBox)) {
                 // Disable stencil test for entities inside the portal.
                 // Only affects the correct side, ones on the wrong side will not be rendered in the first place.
                 GL11.glDisable(GL11.GL_STENCIL_TEST)
@@ -112,7 +111,7 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
             if (portalStack.isEmpty()) return null
             val instance = portalStack.last()
             if (instance.isPlayerInPortal) return null // lots of edge cases here for little gain, don't even try (for now)
-            val pos = Minecraft.getMinecraft().renderViewEntity!!.getPositionEyes(1.0f)
+            val pos = MinecraftClient.getInstance().renderViewEntity!!.getPositionEyes(1.0f)
             return PortalCamera(instance.portal, pos, Frustum())
         }
          */
@@ -127,24 +126,24 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
     ) {
         companion object {
             // FIXME get rid of Instance and put this in AbstractRenderPortal
-            private val shader = ShaderManager(mc.resourceManager, "betterportals:render_portal")
+            private val shader = JsonGlProgram(mc.resourceManager, "betterportals:render_portal")
         }
         val portal = entity
-        val player: EntityPlayerSP = mc.player
-        val isPlayerInPortal = portal.localBoundingBox.intersects(player.entityBoundingBox)
-                && portal.localBlocks.any { AxisAlignedBB(it).intersects(player.entityBoundingBox) }
+        val player: ClientPlayerEntity = mc.player
+        val isPlayerInPortal = portal.localBoundingBox.intersects(player.boundingBox)
+                && portal.localBlocks.any { BoundingBox(it).intersects(player.boundingBox) }
 
         val portalRotation = portal.localRotation
         val portalFacing = portal.localFacing
         /**
          * Side of the portal on which the player's eyes are.
          */
-        val viewFacing = portalFacing.axis.toFacing(player.getPositionEyes(partialTicks) - entity.pos)
+        val viewFacing = portalFacing.axis.toFacing(player.getCameraPosVec(partialTicks) - entity.pos)
 
         open fun render() {
-            GlStateManager.disableAlpha() // ._. someone forgot to disable this, thanks (happens if chat GUI is opened)
+            GlStateManager.disableAlphaTest() // ._. someone forgot to disable this, thanks (happens if chat GUI is opened)
 
-            if (entity.isDead) {
+            if (entity.removed) {
                 return
             }
 
@@ -161,13 +160,13 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
             if (framebuffer == null) {
                 renderPortalInactive()
             } else {
-                shader.addSamplerTexture("sampler", framebuffer.framebufferTexture)
-                shader.addSamplerTexture("depthSampler", framebuffer.depthTexture)
-                shader.getShaderUniformOrDefault("screenSize")
-                        .set(framebuffer.framebufferWidth.toFloat(), framebuffer.framebufferHeight.toFloat())
-                shader.useShader()
+                shader.bindSampler("sampler", framebuffer)
+                shader.bindSampler("depthSampler", framebuffer.depthTexture)
+                shader.getUniformByNameOrDummy("screenSize")
+                        .set(framebuffer.viewWidth.toFloat(), framebuffer.viewHeight.toFloat())
+                shader.enable()
                 renderPortalFromInside()
-                shader.endShader()
+                shader.disable()
             }
 
             occlusionQuery.end()
@@ -297,22 +296,22 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
         }
 
         private fun renderPortalInactive() {
-            GlStateManager.color(0f, 0f, 0f)
+            GlStateManager.color3f(0f, 0f, 0f)
             renderPortalFromInside()
-            GlStateManager.color(1f, 1f, 1f)
+            GlStateManager.color3f(1f, 1f, 1f)
         }
 
         private fun renderPortalFromInside() {
             val tessellator = Tessellator.getInstance()
             val offset = Vec3d(x - 0.5, y - 0.5, z - 0.5)
 
-            with(tessellator.buffer) {
-                begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION)
+            with(tessellator.bufferBuilder) {
+                begin(GL11.GL_QUADS, VertexFormats.POSITION)
 
                 val blocks = portal.relativeBlocks.map { it.rotate(portalRotation) }
                 blocks.forEach { pos ->
-                    setTranslation(offset.x + pos.x, offset.y + pos.y, offset.z + pos.z)
-                    EnumFacing.VALUES.forEach facing@ { facing ->
+                    this.setOffset(offset.x + pos.x, offset.y + pos.y, offset.z + pos.z)
+                    Direction.values().forEach facing@ { facing ->
                         if (blocks.contains(pos.offset(facing))) return@facing
                         if (facing == viewFacing) return@facing
 
@@ -320,7 +319,7 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
                     }
                 }
 
-                setTranslation(0.0, 0.0, 0.0)
+                this.setOffset(0.0, 0.0, 0.0)
             }
 
             GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL)
@@ -330,21 +329,21 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
             GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL)
         }
 
-        protected open fun renderPartialPortalFace(bufferBuilder: BufferBuilder, facing: EnumFacing) {
+        protected open fun renderPartialPortalFace(bufferBuilder: BufferBuilder, facing: Direction) {
             // Drawing a cube has never been easier
-            val xF = facing.frontOffsetX * 0.5
-            val yF = facing.frontOffsetY * 0.5
-            val zF = facing.frontOffsetZ * 0.5
-            var rotFacing = if (facing.axis == EnumFacing.Axis.Y) EnumFacing.NORTH else EnumFacing.UP
+            val xF = facing.offsetX * 0.5
+            val yF = facing.offsetY * 0.5
+            val zF = facing.offsetZ * 0.5
+            var rotFacing = if (facing.axis == Direction.Axis.Y) Direction.NORTH else Direction.UP
             (0..3).map { _ ->
-                val nextRotFacing = rotFacing.rotateAround(facing.axis).let {
-                    if (facing.axisDirection == EnumFacing.AxisDirection.POSITIVE) it else it.opposite
+                val nextRotFacing = rotFacing.rotateClockwise(facing.axis).let {
+                    if (facing.direction == Direction.AxisDirection.POSITIVE) it else it.opposite
                 }
-                bufferBuilder.pos(
-                        xF + rotFacing.frontOffsetX * 0.5 + nextRotFacing.frontOffsetX * 0.5 + 0.5,
-                        (yF + rotFacing.frontOffsetY * 0.5 + nextRotFacing.frontOffsetY * 0.5 + 0.5),
-                        zF + rotFacing.frontOffsetZ * 0.5 + nextRotFacing.frontOffsetZ * 0.5 + 0.5
-                ).endVertex()
+                bufferBuilder.vertex(
+                        xF + rotFacing.offsetX * 0.5 + nextRotFacing.offsetX * 0.5 + 0.5,
+                        (yF + rotFacing.offsetY * 0.5 + nextRotFacing.offsetY * 0.5 + 0.5),
+                        zF + rotFacing.offsetZ * 0.5 + nextRotFacing.offsetZ * 0.5 + 0.5
+                ).end()
                 rotFacing = nextRotFacing
             }
         }
@@ -352,11 +351,11 @@ abstract class AbstractRenderPortal<T : AbstractPortalEntity>(renderManager: Ren
 
     abstract fun createInstance(entity: T, x: Double, y: Double, z: Double, partialTicks: Float): Instance<T>
 
-    override fun doRender(entity: T, x: Double, y: Double, z: Double, entityYaw: Float, partialTicks: Float) {
+    override fun render(entity: T, x: Double, y: Double, z: Double, entityYaw: Float, partialTicks: Float) {
         createInstance(entity, x, y, z, partialTicks).render()
     }
 
-    override fun doRenderShadowAndFire(entityIn: Entity, x: Double, y: Double, z: Double, yaw: Float, partialTicks: Float) {}
+    override fun postRender(entityIn: Entity, x: Double, y: Double, z: Double, yaw: Float, partialTicks: Float) {}
 
-    override fun getEntityTexture(entity: T): ResourceLocation? = null
+    override fun getTexture(entity: T): Identifier? = null
 }

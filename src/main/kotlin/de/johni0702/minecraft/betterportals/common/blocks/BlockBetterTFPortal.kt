@@ -5,19 +5,19 @@ import de.johni0702.minecraft.betterportals.TF_MOD_ID
 import de.johni0702.minecraft.betterportals.common.*
 import de.johni0702.minecraft.betterportals.common.entity.TFPortalEntity
 import net.minecraft.block.Block
-import net.minecraft.block.state.IBlockState
+import net.minecraft.block.state.BlockState
 import net.minecraft.entity.Entity
 import net.minecraft.entity.item.EntityItem
-import net.minecraft.init.Blocks
+import net.minecraft.block.Blocks
 import net.minecraft.network.EnumPacketDirection
 import net.minecraft.network.NetHandlerPlayServer
 import net.minecraft.network.NetworkManager
-import net.minecraft.util.EnumFacing
+import net.minecraft.util.math.Direction
 import net.minecraft.util.Rotation
-import net.minecraft.util.math.AxisAlignedBB
+import net.minecraft.util.math.BoundingBox
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
-import net.minecraft.world.WorldServer
+import net.minecraft.server.world.ServerWorld
 import net.minecraftforge.common.util.FakePlayerFactory
 import twilightforest.TFConfig
 import twilightforest.TFTeleporter
@@ -41,16 +41,16 @@ class BlockBetterTFPortal : BlockTFPortal(), PortalBlock<TFPortalEntity> {
     override val entityType: Class<TFPortalEntity>
         get() = TFPortalEntity::class.java
 
-    override fun getRemoteWorldFor(localWorld: WorldServer, pos: BlockPos): WorldServer {
+    override fun getRemoteWorldFor(localWorld: ServerWorld, pos: BlockPos): ServerWorld {
         val tfDimId = TFConfig.dimension.dimensionID
         return localWorld.server.getWorld(if (localWorld.provider.dimension == tfDimId) 0 else tfDimId)
     }
 
-    override fun createPortalEntity(localEnd: Boolean, world: World, plane: EnumFacing.Plane, portalBlocks: Set<BlockPos>, localDim: Int, localPos: BlockPos, localRot: Rotation): TFPortalEntity =
+    override fun createPortalEntity(localEnd: Boolean, world: World, plane: Direction.Type, portalBlocks: Set<BlockPos>, localDim: Int, localPos: BlockPos, localRot: Rotation): TFPortalEntity =
             TFPortalEntity(!localEnd, world, portalBlocks, localDim, localPos, localRot, null, BlockPos.ORIGIN, Rotation.NONE)
 
-    private fun makeBetterPortal(localWorld: WorldServer, pos: BlockPos) {
-        val localBlocks = findPortalFrame(localWorld.makeBlockCache(), pos, EnumFacing.Axis.Y, true)
+    private fun makeBetterPortal(localWorld: ServerWorld, pos: BlockPos) {
+        val localBlocks = findPortalFrame(localWorld.makeBlockCache(), pos, Direction.Axis.Y, true)
         if (localBlocks.isEmpty()) {
             LOGGER.warn("Couldn't find TF portal at $pos even though it was just created?")
             return
@@ -61,7 +61,7 @@ class BlockBetterTFPortal : BlockTFPortal(), PortalBlock<TFPortalEntity> {
         val rot = Rotation.NONE
         val portalBlocks = localBlocks.mapTo(mutableSetOf()) { it.subtract(localPos).rotate(rot.reverse) }
 
-        if (localWorld.getEntitiesWithinAABB(TFPortalEntity::class.java, AxisAlignedBB(localPos)).isNotEmpty()) {
+        if (localWorld.getEntitiesWithinAABB(TFPortalEntity::class.java, BoundingBox(localPos)).isNotEmpty()) {
             return // That portal's already linked
         }
 
@@ -81,13 +81,13 @@ class BlockBetterTFPortal : BlockTFPortal(), PortalBlock<TFPortalEntity> {
         // It also clears five blocks above that portal, so let's just put our tail end up there
         val remotePos = targetPos.up(5)
 
-        val localPortal = createPortalEntity(true, localWorld, EnumFacing.Plane.HORIZONTAL, portalBlocks, localDim, localPos, rot)
+        val localPortal = createPortalEntity(true, localWorld, Direction.Type.HORIZONTAL, portalBlocks, localDim, localPos, rot)
         localPortal.localBlocks.forEach {
             localWorld.setBlockState(it, portalBlock.defaultState, 2)
         }
         localWorld.forceSpawnEntity(localPortal)
 
-        val remotePortal = createPortalEntity(false, remoteWorld, EnumFacing.Plane.HORIZONTAL, portalBlocks, remoteDim, remotePos, rot)
+        val remotePortal = createPortalEntity(false, remoteWorld, Direction.Type.HORIZONTAL, portalBlocks, remoteDim, remotePos, rot)
         remoteWorld.forceSpawnEntity(remotePortal)
 
         localPortal.link(remoteDim, remotePos, rot)
@@ -110,34 +110,34 @@ class BlockBetterTFPortal : BlockTFPortal(), PortalBlock<TFPortalEntity> {
 
     override fun tryToCreatePortal(world: World, pos: BlockPos, activationItem: EntityItem): Boolean {
         val success = super.tryToCreatePortal(world, pos, activationItem)
-        if (success && world is WorldServer) makeBetterPortal(world, pos)
+        if (success && world is ServerWorld) makeBetterPortal(world, pos)
         return success
     }
 
-    override fun neighborChanged(state: IBlockState, worldIn: World, pos: BlockPos, blockIn: Block, fromPos: BlockPos) {
+    override fun neighborChanged(state: BlockState, worldIn: World, pos: BlockPos, blockIn: Block, fromPos: BlockPos) {
         @Suppress("DEPRECATION")
         super.neighborChanged(state, worldIn, pos, blockIn, fromPos)
         if (worldIn.getBlockState(pos).block != this) {
-            worldIn.getEntitiesWithinAABB(TFPortalEntity::class.java, AxisAlignedBB(pos)).forEach {
+            worldIn.getEntitiesWithinAABB(TFPortalEntity::class.java, BoundingBox(pos)).forEach {
                 it.setDead()
             }
         }
     }
 
-    override fun addCollisionBoxToList(state: IBlockState, worldIn: World, pos: BlockPos, entityBox: AxisAlignedBB, collidingBoxes: MutableList<AxisAlignedBB>, entityIn: Entity?, isActualState: Boolean) {
+    override fun addCollisionBoxToList(state: BlockState, worldIn: World, pos: BlockPos, entityBox: BoundingBox, collidingBoxes: MutableList<BoundingBox>, entityIn: Entity?, isActualState: Boolean) {
         addCollisionBoxToList(pos, entityBox, collidingBoxes, state.getCollisionBoundingBox(worldIn, pos))
     }
 
     private fun hasPortal(worldIn: World, pos: BlockPos): Boolean {
-        val portalPos = findPortalFrame(worldIn.makeBlockCache(), pos, EnumFacing.Axis.Y, true).minByAnyCoord()
-        return portalPos != null && worldIn.getEntitiesWithinAABB(entityType, AxisAlignedBB(portalPos)).isNotEmpty()
+        val portalPos = findPortalFrame(worldIn.makeBlockCache(), pos, Direction.Axis.Y, true).minByAnyCoord()
+        return portalPos != null && worldIn.getEntitiesWithinAABB(entityType, BoundingBox(portalPos)).isNotEmpty()
     }
 
-    override fun onEntityCollidedWithBlock(worldIn: World, pos: BlockPos, state: IBlockState, entityIn: Entity) {
+    override fun onEntityCollidedWithBlock(worldIn: World, pos: BlockPos, state: BlockState, entityIn: Entity) {
         if (hasPortal(worldIn, pos)) {
             // Better portal exists for this portal block
             return
-        } else if (worldIn is WorldServer){
+        } else if (worldIn is ServerWorld){
             // Legacy portal, convert to better portal
             makeBetterPortal(worldIn, pos)
         }

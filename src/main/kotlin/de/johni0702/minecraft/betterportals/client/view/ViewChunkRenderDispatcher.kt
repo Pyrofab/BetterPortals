@@ -4,7 +4,10 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.ListenableFutureTask
 import de.johni0702.minecraft.betterportals.BetterPortalsMod
 import de.johni0702.minecraft.betterportals.client.renderer.ViewRenderPlan
+import net.minecraft.block.BlockRenderLayer
 import net.minecraft.client.Minecraft
+import net.minecraft.client.render.BufferBuilder
+import net.minecraft.client.render.ChunkRenderDispatcher
 import net.minecraft.client.renderer.BufferBuilder
 import net.minecraft.client.renderer.RegionRenderCacheBuilder
 import net.minecraft.client.renderer.RenderGlobal

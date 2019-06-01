@@ -1,7 +1,7 @@
 package de.johni0702.minecraft.betterportals.client.view
 
 import de.johni0702.minecraft.betterportals.common.view.ViewManager
-import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.client.network.ClientPlayerEntity
 
 /**
  * Manages views sent from the server.
@@ -9,7 +9,7 @@ import net.minecraft.client.entity.EntityPlayerSP
  * Can be obtained from [de.johni0702.minecraft.betterportals.BetterPortalsMod.viewManager]
  */
 interface ClientViewManager : ViewManager {
-    override val player: EntityPlayerSP
+    override val player: ClientPlayerEntity
     override val views: List<ClientView>
     override val mainView: ClientView
 

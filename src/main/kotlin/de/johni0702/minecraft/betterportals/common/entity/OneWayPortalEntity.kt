@@ -2,14 +2,15 @@ package de.johni0702.minecraft.betterportals.common.entity
 
 import de.johni0702.minecraft.betterportals.common.pos
 import net.minecraft.block.Block
-import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.client.renderer.culling.ICamera
-import net.minecraft.entity.player.EntityPlayer
-import net.minecraft.init.Blocks
+import net.minecraft.entity.player.PlayerEntity
+import net.minecraft.block.Blocks
 import net.minecraft.nbt.NBTBase
-import net.minecraft.nbt.NBTTagCompound
-import net.minecraft.util.EnumFacing
-import net.minecraft.util.Rotation
+import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.Tag
+import net.minecraft.util.math.Direction
+import net.minecraft.util.BlockRotation
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
 
@@ -26,20 +27,20 @@ abstract class OneWayPortalEntity(
          */
         var isTailEnd: Boolean,
 
-        world: World, plane: EnumFacing.Plane, relativeBlocks: Set<BlockPos>,
-        localDimension: Int, localPosition: BlockPos, localRotation: Rotation,
-        remoteDimension: Int?, remotePosition: BlockPos, remoteRotation: Rotation
+        world: World, plane: Direction.Type, relativeBlocks: Set<BlockPos>,
+        localDimension: Int, localPosition: BlockPos, localRotation: BlockRotation,
+        remoteDimension: Int?, remotePosition: BlockPos, remoteRotation: BlockRotation
 ) : AbstractPortalEntity(
         world, plane, relativeBlocks,
         localDimension, localPosition, localRotation,
         remoteDimension,remotePosition, remoteRotation
 ) {
-    override fun writePortalToNBT(): NBTTagCompound =
-            super.writePortalToNBT().apply { setBoolean("IsTailEnd", isTailEnd) }
+    override fun writePortalToNBT(): CompoundTag =
+            super.writePortalToNBT().apply { putBoolean("IsTailEnd", isTailEnd) }
 
-    override fun readPortalFromNBT(nbt: NBTBase?) {
+    override fun readPortalFromNBT(nbt: Tag?) {
         super.readPortalFromNBT(nbt)
-        (nbt as? NBTTagCompound)?.apply {
+        (nbt as? CompoundTag)?.apply {
             isTailEnd = getBoolean("IsTailEnd")
         }
     }
@@ -57,7 +58,7 @@ abstract class OneWayPortalEntity(
             val oldState = (if (value) Blocks.AIR else portalFrameBlock).defaultState
             val portalBlocks = localBlocks
             portalBlocks.forEach { pos ->
-                EnumFacing.HORIZONTALS.forEach { facing ->
+                Direction.HORIZONTAL.forEach { facing ->
                     val neighbour = pos.offset(facing)
                     if (neighbour !in portalBlocks) {
                         if (world.getBlockState(neighbour) == oldState) {
@@ -83,14 +84,14 @@ abstract class OneWayPortalEntity(
 
         if (isTravelingInProgress && isTailEnd) {
             // Check whether the player has moved away from the tail end of the portal far enough so we can hide it
-            isTravelingInProgress = world.playerEntities.filter { it is EntityPlayerSP }.any {
+            isTravelingInProgress = world.players.filter { it is ClientPlayerEntity }.any {
                 // Traveling is still considered in progress if the distance to the portal center is less than 10 blocks
-                localBoundingBox.center.squareDistanceTo(it.pos) < 100.0
+                localBoundingBox.center.squaredDistanceTo(it.pos) < 100.0
             }
         }
     }
 
-    override fun teleportPlayer(player: EntityPlayer, from: EnumFacing): Boolean {
+    override fun teleportPlayer(player: PlayerEntity, from: Direction): Boolean {
         val remotePortal = getRemotePortal() // FIXME for some reason this call fails after the teleport
         val success = super.teleportPlayer(player, from)
         if (success) {

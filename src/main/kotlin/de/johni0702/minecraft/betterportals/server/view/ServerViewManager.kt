@@ -1,13 +1,9 @@
 package de.johni0702.minecraft.betterportals.server.view
 
 import de.johni0702.minecraft.betterportals.common.view.ViewManager
-import net.minecraft.entity.player.EntityPlayerMP
-import net.minecraft.util.EnumFacing
+import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.server.world.ServerWorld
 import net.minecraft.util.math.Vec3d
-import net.minecraft.world.WorldServer
-import net.minecraftforge.common.capabilities.Capability
-import net.minecraftforge.common.capabilities.CapabilityInject
-import net.minecraftforge.common.capabilities.ICapabilityProvider
 
 /**
  * Manages views for a player.
@@ -15,7 +11,7 @@ import net.minecraftforge.common.capabilities.ICapabilityProvider
  * Obtain an instance for a `player` by calling `player.getCapability(ServerViewManager.CAP, null)` or `player.viewManager`.
  */
 interface ServerViewManager : ViewManager {
-    override val player: EntityPlayerMP
+    override val player: ServerPlayerEntity
     override val views: List<ServerView>
     override val mainView: ServerView
 
@@ -30,7 +26,7 @@ interface ServerViewManager : ViewManager {
      * @param beforeSendChunks Called on the view camera before any chunks are sent. Can be used to re-position the camera.
      * @return The newly created view
      */
-    fun createView(world: WorldServer, pos: Vec3d, beforeSendChunks: EntityPlayerMP.() -> Unit = {}): ServerView
+    fun createView(world: ServerWorld, pos: Vec3d, beforeSendChunks: ServerPlayerEntity.() -> Unit = {}): ServerView
 
     /**
      * Flush all packets from all views.
@@ -40,25 +36,9 @@ interface ServerViewManager : ViewManager {
      */
     fun flushPackets()
 
-    companion object {
-        val CAP get() = cap
-        @CapabilityInject(ServerViewManager::class)
-        private lateinit var cap: Capability<ServerViewManager>
-    }
-
-    class Provider(
-            lazyManager: () -> ServerViewManager
-    ) : ICapabilityProvider {
-        private val manager by lazy { lazyManager() }
-
-        override fun hasCapability(capability: Capability<*>, facing: EnumFacing?): Boolean =
-                capability == ServerViewManager.CAP
-
-        override fun <T : Any> getCapability(capability: Capability<T>, facing: EnumFacing?): T? = when(capability) {
-            CAP -> CAP.cast(manager)
-            else -> null
-        }
+    interface Provider {
+        fun getCapability(): ServerViewManager
     }
 }
 
-val EntityPlayerMP.viewManager get() = getCapability(ServerViewManager.CAP, null)!!
+val ServerPlayerEntity.viewManager get() = (this as ServerViewManager.Provider).getCapability()

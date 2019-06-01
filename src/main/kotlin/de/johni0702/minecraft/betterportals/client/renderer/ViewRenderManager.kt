@@ -1,5 +1,6 @@
 package de.johni0702.minecraft.betterportals.client.renderer
 
+import com.mojang.blaze3d.platform.GlStateManager
 import de.johni0702.minecraft.betterportals.BPConfig
 import de.johni0702.minecraft.betterportals.BetterPortalsMod
 import de.johni0702.minecraft.betterportals.client.*
@@ -7,20 +8,13 @@ import de.johni0702.minecraft.betterportals.client.view.ClientView
 import de.johni0702.minecraft.betterportals.client.view.ClientViewImpl
 import de.johni0702.minecraft.betterportals.common.*
 import de.johni0702.minecraft.betterportals.common.entity.AbstractPortalEntity
-import net.minecraft.client.Minecraft
-import net.minecraft.client.renderer.GlStateManager
-import net.minecraft.client.renderer.culling.Frustum
-import net.minecraft.util.math.AxisAlignedBB
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.world.ClientWorld
+import net.minecraft.util.math.BoundingBox
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.World
-import net.minecraftforge.client.event.DrawBlockHighlightEvent
-import net.minecraftforge.client.event.EntityViewRenderEvent
-import net.minecraftforge.common.MinecraftForge
-import net.minecraftforge.fml.common.eventhandler.EventPriority
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
 import java.util.*
-import javax.vecmath.Point3d
 
 class ViewRenderManager {
     companion object {
@@ -53,24 +47,24 @@ class ViewRenderManager {
      * Determine the camera's current world, prepare all portals and render the world.
      */
     fun renderWorld(partialTicks: Float, finishTimeNano: Long) {
-        val mc = Minecraft.getMinecraft()
+        val mc = MinecraftClient.getInstance()
 
-        if (mc.displayWidth != frameWidth || mc.displayHeight != frameHeight) {
-            frameWidth = mc.displayWidth
-            frameHeight = mc.displayHeight
-            framebufferPool.forEach { it.deleteFramebuffer() }
+        if (mc.window.width != frameWidth || mc.window.height != frameHeight) {
+            frameWidth = mc.window.width
+            frameHeight = mc.window.height
+            framebufferPool.forEach { it.delete() }
             framebufferPool.clear()
         }
 
-        mc.mcProfiler.startSection("determineVisiblePortals")
-        val viewEntity = mc.renderViewEntity ?: mc.player
+        mc.profiler.startSection("determineVisiblePortals")
+        val viewEntity = mc.cameraEntity ?: mc.player
         var view = BetterPortalsMod.viewManager.mainView
         (view as ClientViewImpl).captureState(mc) // capture main view camera
         val entityPos = viewEntity.syncPos + viewEntity.eyeOffset
-        val interpEntityPos = viewEntity.getPositionEyes(partialTicks)
+        val interpEntityPos = viewEntity.getEyeHeight(partialTicks)
         // TODO do third person camera
         var cameraPos = interpEntityPos
-        var cameraYaw = viewEntity.prevRotationYaw + (viewEntity.rotationYaw - viewEntity.prevRotationYaw) * partialTicks.toDouble()
+        var cameraYaw = viewEntity.prevYaw + (viewEntity.yaw - viewEntity.prevYaw) * partialTicks.toDouble()
 
         var parentPortal: AbstractPortalEntity? = null
 
@@ -83,32 +77,34 @@ class ViewRenderManager {
         var target = interpEntityPos
         var hitVisualPosition = false
         while (true) {
-            val hitInfo = view.camera.world.getEntities(AbstractPortalEntity::class.java) {
-                val view = it?.view
-                // FIXME handle one-way portals
-                // Ignore portals which haven't yet been loaded or have already been destroyed
-                view != null && !it.isDead
-                        // or have already been used in the previous iteration
-                        && (view.camera.world != parentPortal?.world || it.localPosition != parentPortal?.remotePosition)
-            }.flatMap { portal ->
-                // For each portal, find the point intercepting the line between entity and camera
-                val vec = portal.localFacing.directionVec.to3d() * 0.5
-                val negVec = vec * -1
-                portal.localBlocks.map {
-                    // contract BB to only detect changes crossing 0.5 on the portal axis instead of hitting anywhere in the block
-                    val trace = AxisAlignedBB(it).contract(vec).contract(negVec).calculateIntercept(pos, target)
-                    Pair(portal, trace)
-                }.filter {
-                    it.second != null
-                }.map { (portal, trace) ->
-                    // and calculate its distance to the entity
-                    val hitVec = trace!!.hitVec
-                    Pair(Pair(portal, hitVec), (hitVec - pos).lengthSquared())
-                }
-            }.minBy {
-                // then get the one which is closest to the entity
-                it.second
-            }?.first
+            val hitInfo = (view.camera.world as ClientWorld).entities
+                .filterIsInstance<AbstractPortalEntity>()
+                .filter {
+                    val view = it?.view
+                    // FIXME handle one-way portals
+                    // Ignore portals which haven't yet been loaded or have already been destroyed
+                    view != null && !it.invalid
+                            // or have already been used in the previous iteration
+                            && (view.camera.world != parentPortal?.world || it.localPosition != parentPortal?.remotePosition)
+                }.flatMap { portal ->
+                    // For each portal, find the point intercepting the line between entity and camera
+                    val vec = portal.localFacing.vector.to3d() * 0.5
+                    val negVec = vec * -1
+                    portal.localBlocks.map {
+                        // contract BB to only detect changes crossing 0.5 on the portal axis instead of hitting anywhere in the block
+                        val trace = BoundingBox(it).contract(vec).contract(negVec).calculateIntercept(pos, target)
+                        Pair(portal, trace)
+                    }.filter {
+                        it.second != null
+                    }.map { (portal, trace) ->
+                        // and calculate its distance to the entity
+                        val hitVec = trace!!.hitVec
+                        Pair(Pair(portal, hitVec), (hitVec - pos).lengthSquared())
+                    }
+                }.minBy {
+                    // then get the one which is closest to the entity
+                    it.second
+                }?.first
 
             if (hitInfo != null) {
                 val (portal, hitVec) = hitInfo
@@ -141,7 +137,7 @@ class ViewRenderManager {
             mc.entityRenderer.setupCameraTransform(partialTicks, 0)
             val entity = mc.renderViewEntity!!
             val entityPos = entity.lastTickPos + (entity.pos - entity.lastTickPos) * partialTicks.toDouble()
-            Frustum().apply { setPosition(entityPos.x, entityPos.y, entityPos.z) }
+            FrustumWithOrigin().apply { setOrigin(entityPos.x, entityPos.y, entityPos.z) }
         }
         eventHandler.capture = false
         GlStateManager.popMatrix()
@@ -294,7 +290,7 @@ class ViewRenderPlan(
         if (view.manager.activeView != view) {
             return view.withView { renderSelf(partialTicks, finishTimeNano) }
         }
-        val mc = Minecraft.getMinecraft()
+        val mc = MinecraftClient.getMinecraft()
         val framebuffer = manager.allocFramebuffer()
 
         world.profiler.startSection("renderView" + view.id)

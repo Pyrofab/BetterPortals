@@ -24,9 +24,9 @@ import net.minecraft.block.Block
 import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.WorldClient
 import net.minecraft.tileentity.TileEntityEndPortal
-import net.minecraft.util.ResourceLocation
+import net.minecraft.util.Identifier
 import net.minecraft.world.World
-import net.minecraft.world.WorldServer
+import net.minecraft.server.world.ServerWorld
 import net.minecraftforge.common.ForgeChunkManager
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.common.capabilities.CapabilityManager
@@ -42,23 +42,20 @@ import net.minecraftforge.fml.common.eventhandler.EventPriority
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.common.registry.EntityRegistry
+import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 
 const val MOD_ID = "betterportals"
 
 const val TF_MOD_ID = "twilightforest"
 
-lateinit var LOGGER: Logger
+lateinit var LOGGER = LogManager.getLogger(MOD_ID)
 
-@Mod(modid = MOD_ID, useMetadata = true)
 class BetterPortalsMod {
 
-    internal val hasTwilightForest by lazy { BPConfig.enableExperimentalTwilightForestPortals && Loader.isModLoaded(TF_MOD_ID) }
+    internal val hasTwilightForest = false
 
-    @Mod.EventHandler
     fun preInit(event: FMLPreInitializationEvent) {
-        INSTANCE = this
-        LOGGER = event.modLog
         PROXY.preInit(this)
 
         MinecraftForge.EVENT_BUS.register(this)
@@ -75,7 +72,6 @@ class BetterPortalsMod {
         }
     }
 
-    @Mod.EventHandler
     fun init(event: FMLInitializationEvent) {
         PROXY.init(this)
     }
@@ -91,9 +87,9 @@ class BetterPortalsMod {
         override fun preInit(mod: BetterPortalsMod) {}
 
         override fun init(mod: BetterPortalsMod) {
-            Net.INSTANCE // initialize via <init>
+            Net // initialize via <init>
 
-            CapabilityManager.INSTANCE.register(ServerViewManager::class.java, NoStorage(), { throw UnsupportedOperationException() })
+//            CapabilityManager.INSTANCE.register(ServerViewManager::class.java, NoStorage(), { throw UnsupportedOperationException() })
             MinecraftForge.EVENT_BUS.register(AttachServerViewManagerCapability())
 
             // Tickets are only allocated temporarily during remote portal frame search and otherwise aren't needed
@@ -103,7 +99,7 @@ class BetterPortalsMod {
 
             if (BPConfig.enableNetherPortals) {
                 EntityRegistry.registerModEntity(
-                        ResourceLocation(MOD_ID, "nether_portal"),
+                        Identifier(MOD_ID, "nether_portal"),
                         NetherPortalEntity::class.java,
                         "nether_portal",
                         0,
@@ -115,7 +111,7 @@ class BetterPortalsMod {
             }
             if (BPConfig.enableEndPortals) {
                 EntityRegistry.registerModEntity(
-                        ResourceLocation(MOD_ID, "end_entry_portal"),
+                        Identifier(MOD_ID, "end_entry_portal"),
                         EndEntryPortalEntity::class.java,
                         "end_entry_portal",
                         1,
@@ -125,7 +121,7 @@ class BetterPortalsMod {
                         false
                 )
                 EntityRegistry.registerModEntity(
-                        ResourceLocation(MOD_ID, "end_exit_portal"),
+                        Identifier(MOD_ID, "end_exit_portal"),
                         EndExitPortalEntity::class.java,
                         "end_exit_portal",
                         2,
@@ -137,7 +133,7 @@ class BetterPortalsMod {
             }
             if (mod.hasTwilightForest) {
                 EntityRegistry.registerModEntity(
-                        ResourceLocation(MOD_ID, "tf_portal"),
+                        Identifier(MOD_ID, "tf_portal"),
                         TFPortalEntity::class.java,
                         "tf_portal",
                         3,
@@ -188,7 +184,7 @@ class BetterPortalsMod {
         }
 
         override fun sync(world: World?, runnable: () -> Unit) {
-            if (world is WorldServer) {
+            if (world is ServerWorld) {
                 super.sync(world, runnable)
             } else if (world == null || world is WorldClient) {
                 Minecraft.getMinecraft().addScheduledTask(runnable).logFailure()
@@ -205,7 +201,7 @@ class BetterPortalsMod {
         private var inRunLater = false
 
         override fun nextTick(world: World?, runnable: () -> Unit) {
-            if (world is WorldServer) {
+            if (world is ServerWorld) {
                 super.nextTick(world, runnable)
             } else if (world == null || world is WorldClient) {
                 val mc = Minecraft.getMinecraft()
@@ -240,9 +236,8 @@ class BetterPortalsMod {
     }
 
     companion object {
-        @SidedProxy
         lateinit var PROXY: Proxy
-        lateinit var INSTANCE: BetterPortalsMod
+        val INSTANCE = BetterPortalsMod()
 
         internal val viewManagerImpl by lazy { ClientViewManagerImpl() }
         val viewManager: ClientViewManager by lazy { viewManagerImpl }

@@ -1,15 +1,16 @@
 package de.johni0702.minecraft.betterportals.client
 
-import net.minecraft.client.renderer.GlStateManager
-import net.minecraft.client.renderer.OpenGlHelper
-import net.minecraft.client.renderer.texture.TextureUtil
-import net.minecraft.client.shader.Framebuffer
+import com.mojang.blaze3d.platform.GLX
+import com.mojang.blaze3d.platform.GlStateManager
+import com.mojang.blaze3d.platform.TextureUtil
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gl.GlFramebuffer
 import org.lwjgl.opengl.GL11
 
 /**
- * Regular [Framebuffer] but with a depth texture.
+ * Regular [GlFramebuffer] but with a depth texture.
  */
-class FramebufferD(width: Int, height: Int): Framebuffer(width, height, false) {
+class FramebufferD(width: Int, height: Int): GlFramebuffer(width, height, false, MinecraftClient.IS_SYSTEM_MAC) {
     // Workaround createFramebuffer being called during the super constructor before any initializer would run
     @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     lateinit var depthTex: Integer
@@ -19,25 +20,25 @@ class FramebufferD(width: Int, height: Int): Framebuffer(width, height, false) {
             depthTex = Integer(value)
         }
 
-    override fun createFramebuffer(width: Int, height: Int) {
-        super.createFramebuffer(width, height)
+    override fun initFbo(width: Int, height: Int, flushErrors: Boolean) {
+        super.initFbo(width, height, flushErrors)
 
-        depthTexture = TextureUtil.glGenTextures()
+        depthTexture = TextureUtil.generateTextureId()
         GlStateManager.bindTexture(depthTexture)
-        GlStateManager.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_DEPTH_COMPONENT, width, height, 0, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, null)
-        OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, framebufferObject)
-        OpenGlHelper.glFramebufferTexture2D(OpenGlHelper.GL_FRAMEBUFFER, OpenGlHelper.GL_DEPTH_ATTACHMENT, GL11.GL_TEXTURE_2D, depthTexture, 0)
+        GlStateManager.texImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_DEPTH_COMPONENT, width, height, 0, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, null)
+        GLX.glBindFramebuffer(GLX.GL_FRAMEBUFFER, this.fbo)
+        GLX.glFramebufferTexture2D(GLX.GL_FRAMEBUFFER, GLX.GL_DEPTH_ATTACHMENT, GL11.GL_TEXTURE_2D, depthTexture, 0)
     }
 
-    override fun deleteFramebuffer() {
-        unbindFramebufferTexture()
-        unbindFramebuffer()
+    override fun delete() {
+        endRead()
+        endWrite()
 
         if (depthTexture > -1) {
-            TextureUtil.deleteTexture(depthTexture)
+            TextureUtil.releaseTextureId(depthTexture)
             depthTexture = -1
         }
 
-        super.deleteFramebuffer()
+        super.delete()
     }
 }

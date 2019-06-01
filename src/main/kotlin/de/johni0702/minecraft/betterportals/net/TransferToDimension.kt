@@ -1,16 +1,23 @@
 package de.johni0702.minecraft.betterportals.net
 
+import com.raphydaphy.crochet.network.IPacket
+import com.raphydaphy.crochet.network.MessageHandler
+import com.raphydaphy.crochet.network.PacketHandler
 import de.johni0702.minecraft.betterportals.BetterPortalsMod.Companion.viewManager
 import de.johni0702.minecraft.betterportals.LOGGER
+import de.johni0702.minecraft.betterportals.MOD_ID
 import de.johni0702.minecraft.betterportals.client.renderer.TransferToDimensionRenderer
 import de.johni0702.minecraft.betterportals.common.sync
 import io.netty.buffer.ByteBuf
-import net.minecraftforge.fml.common.network.simpleimpl.IMessage
-import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler
-import net.minecraftforge.fml.common.network.simpleimpl.MessageContext
+import net.fabricmc.fabric.api.network.PacketContext
+import net.minecraft.util.Identifier
+import net.minecraft.util.PacketByteBuf
+import net.minecraftforge.fml.common.network.simpleimpl.IPacket
+import net.minecraftforge.fml.common.network.simpleimpl.IPacketHandler
+import net.minecraftforge.fml.common.network.simpleimpl.PacketContext
 
 /**
- * Sent to the client when [net.minecraft.server.management.PlayerList.transferPlayerToDimension] is called.
+ * Sent to the client when [net.minecraft.server.PlayerManager.transferPlayerToDimension] is called.
  * The [toId] is the soon-to-be main view of the new dimension. It is up to the client to notify the server
  * that the transition is complete and that the current/soon-to-be-old main view with id [fromId] is no longer needed
  * by sending a [TransferToDimensionDone] message.
@@ -18,23 +25,29 @@ import net.minecraftforge.fml.common.network.simpleimpl.MessageContext
 internal class TransferToDimension(
         var fromId: Int = 0,
         var toId: Int = 0
-) : IMessage {
+) : IPacket {
 
-    override fun fromBytes(buf: ByteBuf) {
+    override fun getID() = ID
+
+    override fun read(buf: PacketByteBuf) {
         fromId = buf.readInt()
         toId = buf.readInt()
     }
 
-    override fun toBytes(buf: ByteBuf) {
+    override fun write(buf: PacketByteBuf) {
         buf.writeInt(fromId)
         buf.writeInt(toId)
     }
 
-    internal class Handler : IMessageHandler<TransferToDimension, IMessage> {
-        override fun onMessage(message: TransferToDimension, ctx: MessageContext): IMessage? {
+    internal companion object Handler : MessageHandler<TransferToDimension>() {
+        val ID = Identifier(MOD_ID, "transfer_to_dimension")
+
+        override fun create() = TransferToDimension()
+
+        override fun handle(ctx: PacketContext, message: TransferToDimension) {
             ctx.sync {
                 val whenDone = {
-                    Net.INSTANCE.sendToServer(TransferToDimensionDone(message.fromId))
+                    PacketHandler.sendToServer(TransferToDimensionDone(message.fromId))
                 }
                 val fromView = viewManager.views.find { it.id == message.fromId }
                 if (fromView == null) {
@@ -48,7 +61,6 @@ internal class TransferToDimension(
                 }
                 TransferToDimensionRenderer(fromView, toView, whenDone)
             }
-            return null
         }
     }
 }

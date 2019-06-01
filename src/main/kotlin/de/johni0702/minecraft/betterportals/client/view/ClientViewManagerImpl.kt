@@ -7,13 +7,16 @@ import de.johni0702.minecraft.betterportals.common.pos
 import de.johni0702.minecraft.betterportals.common.removeAtOrNull
 import io.netty.buffer.ByteBuf
 import net.minecraft.client.Minecraft
-import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.client.multiplayer.WorldClient
 import net.minecraft.crash.CrashReport
 import net.minecraft.network.play.client.CPacketPlayer
 import net.minecraft.util.ReportedException
+import net.minecraft.util.crash.CrashReport
 import net.minecraft.util.math.MathHelper
 import net.minecraft.util.math.Vec3d
+import net.minecraft.world.Difficulty
 import net.minecraft.world.EnumDifficulty
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.common.eventhandler.EventPriority
@@ -22,9 +25,9 @@ import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
 
 internal class ClientViewManagerImpl : ClientViewManager {
-    val mc: Minecraft = Minecraft.getMinecraft()
+    val mc: MinecraftClient = MinecraftClient.getInstance()
 
-    override val player: EntityPlayerSP
+    override val player: ClientPlayerEntity
         get() = mc.player
 
     override var mainView: ClientViewImpl = ClientViewImpl(this, 0, null, null, null, null).apply {
@@ -140,7 +143,7 @@ internal class ClientViewManagerImpl : ClientViewManager {
     internal fun makeMainView(newMainView: ClientViewImpl) {
         with(mainView.camera) {
             connection.sendPacket(CPacketPlayer.PositionRotation(
-                    posX, entityBoundingBox.minY, posZ, rotationYaw, rotationPitch, onGround))
+                    posX, entityBoundingBox.minY, z, rotationYaw, rotationPitch, onGround))
         }
         val oldMainView = mainView
 
@@ -234,7 +237,7 @@ internal class ClientViewManagerImpl : ClientViewManager {
 
         val expectedId = serverMainViewQueue.getOrNull(0)?.second?.id
         if (expectedId != viewId) {
-            // We haven't requested this change, someone must have called `PlayerList.transferPlayerToDimension` on the server.
+            // We haven't requested this change, someone must have called `PlayerManager.transferPlayerToDimension` on the server.
             // Rewind all view changes which haven't yet been confirmed by the server (it'll ignore them because it decided for us to go elsewhere)
             rewindMainView()
             // So, let's act as if we did request it
@@ -260,7 +263,7 @@ internal class ClientViewManagerImpl : ClientViewManager {
             return
         }
 
-        mc.mcProfiler.startSection("tickViews")
+        mc.profiler.push("tickViews")
 
         views.filter { !it.isMainView }.forEach { view ->
             view.withView {
@@ -268,25 +271,25 @@ internal class ClientViewManagerImpl : ClientViewManager {
             }
         }
 
-        mc.mcProfiler.endSection()
+        mc.profiler.endSection()
     }
 
     private fun tickView() {
         if (mc.entityRenderer == null) return
 
-        mc.mcProfiler.startSection(activeView.id.toString())
+        mc.profiler.push(activeView.id.toString())
 
         mc.entityRenderer.getMouseOver(1.0F)
 
-        mc.mcProfiler.startSection("gameRenderer")
+        mc.profiler.push("gameRenderer")
 
         mc.entityRenderer.updateRenderer()
 
-        mc.mcProfiler.endStartSection("levelRenderer")
+        mc.profiler.swap("levelRenderer")
 
         mc.renderGlobal.updateClouds()
 
-        mc.mcProfiler.endStartSection("level")
+        mc.profiler.swap("level")
 
         if (mc.world.lastLightningBolt > 0) {
             mc.world.lastLightningBolt = mc.world.lastLightningBolt - 1
@@ -294,7 +297,7 @@ internal class ClientViewManagerImpl : ClientViewManager {
 
         mc.world.updateEntities()
 
-        mc.world.setAllowedSpawnTypes(mc.world.difficulty != EnumDifficulty.PEACEFUL, true)
+        mc.world.setAllowedSpawnTypes(mc.world.difficulty != Difficulty.PEACEFUL, true)
 
         try {
             mc.world.tick()
@@ -304,16 +307,16 @@ internal class ClientViewManagerImpl : ClientViewManager {
             throw ReportedException(crash)
         }
 
-        mc.mcProfiler.endStartSection("animateTick")
+        mc.profiler.swap("animateTick")
 
-        mc.world.doVoidFogParticles(MathHelper.floor(mc.player.posX), MathHelper.floor(mc.player.posY), MathHelper.floor(mc.player.posZ))
+        mc.world.doVoidFogParticles(MathHelper.floor(mc.player.posX), MathHelper.floor(mc.player.y), MathHelper.floor(mc.player.z))
 
-        mc.mcProfiler.endStartSection("particles")
+        mc.profiler.swap("particles")
 
         mc.effectRenderer.updateEffects()
 
-        mc.mcProfiler.endSection()
-        mc.mcProfiler.endSection()
+        mc.profiler.endSection()
+        mc.profiler.endSection()
     }
 
     private fun preRender() {

@@ -1,27 +1,31 @@
 package de.johni0702.minecraft.betterportals.net
 
+import com.raphydaphy.crochet.network.IPacket
+import com.raphydaphy.crochet.network.MessageHandler
 import de.johni0702.minecraft.betterportals.BetterPortalsMod
 import de.johni0702.minecraft.betterportals.LOGGER
+import de.johni0702.minecraft.betterportals.MOD_ID
 import de.johni0702.minecraft.betterportals.common.sync
-import io.netty.buffer.ByteBuf
-import net.minecraftforge.fml.common.network.simpleimpl.IMessage
-import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler
-import net.minecraftforge.fml.common.network.simpleimpl.MessageContext
+import net.fabricmc.fabric.api.network.PacketContext
+import net.minecraft.util.Identifier
+import net.minecraft.util.PacketByteBuf
 
 class DestroyView(
         var viewId: Int = 0
-) : IMessage {
+) : IPacket {
+    override fun getID() = ID
 
-    override fun fromBytes(buf: ByteBuf) {
+    override fun read(buf: PacketByteBuf) {
         viewId = buf.readInt()
     }
 
-    override fun toBytes(buf: ByteBuf) {
+    override fun write(buf: PacketByteBuf) {
         buf.writeInt(viewId)
     }
 
-    internal class Handler : IMessageHandler<DestroyView, IMessage> {
-        override fun onMessage(message: DestroyView, ctx: MessageContext): IMessage? {
+    internal companion object Handler : MessageHandler<DestroyView>() {
+        val ID = Identifier(MOD_ID, "destroy_view")
+        override fun handle(ctx: PacketContext, message: DestroyView) {
             ctx.sync {
                 val manager = BetterPortalsMod.viewManagerImpl
                 val view = manager.views.find { it.id == message.viewId }
@@ -31,7 +35,8 @@ class DestroyView(
                 }
                 manager.destroyView(view)
             }
-            return null
         }
+
+        override fun create() = DestroyView()
     }
 }

@@ -3,7 +3,7 @@ package de.johni0702.minecraft.betterportals.client.renderer
 import de.johni0702.minecraft.betterportals.common.*
 import net.minecraft.client.renderer.culling.ClippingHelper
 import net.minecraft.client.renderer.culling.Frustum
-import net.minecraft.util.EnumFacing
+import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3d
 
 /**
@@ -33,7 +33,7 @@ class PortalCamera(
             var p2 = Vec3d(aabb.maxX, aabb.maxY, aabb.maxZ)
 
             // Fix one axis to one side
-            val sideValue = (if (side.axisDirection == EnumFacing.AxisDirection.NEGATIVE) p1 else p2)[side.axis]
+            val sideValue = (if (side.axisDirection == Direction.AxisDirection.NEGATIVE) p1 else p2)[side.axis]
             p1 = p1.with(side.axis, sideValue)
             p2 = p2.with(side.axis, sideValue)
 

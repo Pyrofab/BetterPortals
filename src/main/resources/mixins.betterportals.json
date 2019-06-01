@@ -3,15 +3,17 @@
   "package": "de.johni0702.minecraft.betterportals.mixin",
   "mixins": [
     "MixinEntity",
-    "MixinPlayerList",
-    "MixinServerWorldEventHandler"
+    "MixinPlayerManager",
+    "MixinServerWorldEventHandler",
+    "MixinServerPlayerEntity",
+    "AccessiblePalettedContainer"
   ],
   "server": [],
   "client": [
     "MixinActiveRenderInfo",
-    "MixinEntityPlayerSP",
+    "MixinPlayerEntity",
     "MixinEntityRenderer",
-    "MixinPlayerList",
+    "MixinPlayerManager",
     "MixinRenderGlobal",
     "MixinRenderManager",
     "MixinServerWorldEventHandler"

@@ -1,9 +1,8 @@
 package de.johni0702.minecraft.betterportals.client.tile.renderer
 
-import net.minecraft.client.renderer.tileentity.TileEntityEndPortalRenderer
-import net.minecraft.tileentity.TileEntityEndPortal
+import net.minecraft.block.entity.EndPortalBlockEntity
+import net.minecraft.client.render.block.entity.EndPortalBlockEntityRenderer
 
-class BetterEndPortalTileRenderer : TileEntityEndPortalRenderer() {
-    override fun render(te: TileEntityEndPortal, x: Double, y: Double, z: Double, partialTicks: Float, destroyStage: Int, alpha: Float) {
-    }
+class BetterEndPortalTileRenderer : EndPortalBlockEntityRenderer() {
+    override fun render(te: EndPortalBlockEntity, x: Double, y: Double, z: Double, partialTicks: Float, destroyStage: Int) {}
 }

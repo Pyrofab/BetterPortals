@@ -1,5 +1,6 @@
 package de.johni0702.minecraft.betterportals.common.entity
 
+import com.raphydaphy.crochet.network.PacketHandler
 import de.johni0702.minecraft.betterportals.BPConfig
 import de.johni0702.minecraft.betterportals.LOGGER
 import de.johni0702.minecraft.betterportals.client.UtilsClient
@@ -9,25 +10,28 @@ import de.johni0702.minecraft.betterportals.net.*
 import de.johni0702.minecraft.betterportals.server.view.ServerView
 import de.johni0702.minecraft.betterportals.server.view.viewManager
 import io.netty.buffer.ByteBuf
+import net.fabricmc.api.EnvType
+import net.fabricmc.api.Environment
 import net.minecraft.block.material.Material
 import net.minecraft.client.Minecraft
 import net.minecraft.client.entity.AbstractClientPlayer
-import net.minecraft.client.entity.EntityOtherPlayerMP
-import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.client.network.OtherClientPlayerEntity
+import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.client.renderer.culling.ICamera
 import net.minecraft.entity.Entity
 import net.minecraft.entity.EntityList
-import net.minecraft.entity.player.EntityPlayer
-import net.minecraft.entity.player.EntityPlayerMP
-import net.minecraft.nbt.NBTTagCompound
+import net.minecraft.entity.player.PlayerEntity
+import net.minecraft.entity.player.ServerPlayerEntity
+import net.minecraft.nbt.CompoundTag
 import net.minecraft.network.PacketBuffer
-import net.minecraft.util.EnumFacing
+import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.util.math.Direction
 import net.minecraft.util.Rotation
-import net.minecraft.util.math.AxisAlignedBB
+import net.minecraft.util.math.BoundingBox
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.World
-import net.minecraft.world.WorldServer
+import net.minecraft.server.world.ServerWorld
 import net.minecraftforge.common.ForgeHooks
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.event.entity.living.LivingFallEvent
@@ -37,11 +41,11 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.common.registry.IEntityAdditionalSpawnData
 import net.minecraftforge.fml.relauncher.Side
-import net.minecraftforge.fml.relauncher.SideOnly
+import net.minecraftforge.fml.relauncher.Environment
 
 abstract class AbstractPortalEntity(
         world: World,
-        override var plane: EnumFacing.Plane,
+        override var plane: Direction.Type,
         override var relativeBlocks: Set<BlockPos>,
         override var localDimension: Int,
         localPosition: BlockPos,
@@ -51,7 +55,7 @@ abstract class AbstractPortalEntity(
         override var remoteRotation: Rotation
 ) : Entity(world), Portal.Mutable, IEntityAdditionalSpawnData {
 
-    override fun getRenderBoundingBox(): AxisAlignedBB = localBoundingBox
+    override fun getRenderBoundingBox(): BoundingBox = localBoundingBox
     override var localPosition = localPosition
         set(value) {
             field = value
@@ -97,7 +101,7 @@ abstract class AbstractPortalEntity(
     protected open fun checkTeleportees() {
         val facingVec = localFacing.directionVec.to3d().abs() * 2
         val largerBB = localBoundingBox.grow(facingVec)
-        val finerBBs = localBlocks.map { AxisAlignedBB(it).grow(facingVec) }
+        val finerBBs = localBlocks.map { BoundingBox(it).grow(facingVec) }
         world.getEntitiesWithinAABBExcludingEntity(this, largerBB).forEach {
             val entityBB = it.entityBoundingBox
             if (finerBBs.any { entityBB.intersects(it) }) {
@@ -125,22 +129,22 @@ abstract class AbstractPortalEntity(
         }
     }
 
-    protected open fun teleportEntity(entity: Entity, from: EnumFacing) {
+    protected open fun teleportEntity(entity: Entity, from: Direction) {
         thisTickPos.remove(entity)
 
         if (entity.isRiding || entity.isBeingRidden) {
             return // just do nothing for now, not even dismounting works as one would hope
         }
 
-        if (entity is EntityPlayer) {
+        if (entity is PlayerEntity) {
             if (world.isRemote) teleportPlayer(entity, from)
             return
         }
 
         if (!world.isRemote) {
             val remotePortal = getRemotePortal()!!
-            val localWorld = world as WorldServer
-            val remoteWorld = remotePortal.world as WorldServer
+            val localWorld = world as ServerWorld
+            val remoteWorld = remotePortal.world as ServerWorld
 
             if (!ForgeHooks.onTravelToDimension(entity, remotePortal.dimension)) return
 
@@ -159,7 +163,7 @@ abstract class AbstractPortalEntity(
 
             entity.dimension = remotePortal.dimension
             entity.isDead = false
-            newEntity.readFromNBT(entity.writeToNBT(NBTTagCompound()))
+            newEntity.readFromNBT(entity.writeToNBT(CompoundTag()))
             entity.isDead = true
 
             Utils.transformPosition(entity, newEntity, this)
@@ -182,11 +186,11 @@ abstract class AbstractPortalEntity(
     override fun hitByEntity(entityIn: Entity?): Boolean = true
 
     override fun shouldSetPosAfterLoading(): Boolean = false
-    override fun readEntityFromNBT(compound: NBTTagCompound) {
+    override fun readEntityFromNBT(compound: CompoundTag) {
         readPortalFromNBT(compound.getTag("BetterPortal"))
     }
 
-    override fun writeEntityToNBT(compound: NBTTagCompound) {
+    override fun writeEntityToNBT(compound: CompoundTag) {
         compound.setTag("BetterPortal", writePortalToNBT())
     }
 
@@ -233,26 +237,26 @@ abstract class AbstractPortalEntity(
         }
 
         fun onIsOpenBlockSpace(entity: Entity, pos: BlockPos): Boolean {
-            val query = { world: World, aabb: AxisAlignedBB ->
+            val query = { world: World, aabb: BoundingBox ->
                 val blockPos = aabb.min.toBlockPos()
                 val blockState = world.getBlockState(blockPos)
                 if (blockState.block.isNormalCube(blockState, world, blockPos)) {
-                    mutableListOf(AxisAlignedBB(blockPos))
+                    mutableListOf(BoundingBox(blockPos))
                 } else {
                     mutableListOf()
                 }
             }
-            val aabbList = query(entity.world, AxisAlignedBB(pos))
-            modifyAABBs(entity, entity.entityBoundingBox, AxisAlignedBB(pos), aabbList, query)
+            val aabbList = query(entity.world, BoundingBox(pos))
+            modifyAABBs(entity, entity.entityBoundingBox, BoundingBox(pos), aabbList, query)
             return aabbList.isEmpty()
         }
 
         private fun modifyAABBs(
                 entity: Entity,
-                entityAABB: AxisAlignedBB,
-                queryAABB: AxisAlignedBB,
-                aabbList: MutableList<AxisAlignedBB>,
-                queryRemote: (World, AxisAlignedBB) -> List<AxisAlignedBB>
+                entityAABB: BoundingBox,
+                queryAABB: BoundingBox,
+                aabbList: MutableList<BoundingBox>,
+                queryRemote: (World, BoundingBox) -> List<BoundingBox>
         ) {
             val world = entity.world
             world.getEntities(AbstractPortalEntity::class.java) { it?.isDead == false }.forEach { portal ->
@@ -262,7 +266,7 @@ abstract class AbstractPortalEntity(
                 if (remotePortal == null) {
                     // Remote portal hasn't yet been loaded, treat all portal blocks as solid to prevent passing
                     portal.localBlocks.forEach {
-                        val blockAABB = AxisAlignedBB(it)
+                        val blockAABB = BoundingBox(it)
                         if (blockAABB.intersects(entityAABB)) {
                             aabbList.add(blockAABB)
                         }
@@ -271,7 +275,7 @@ abstract class AbstractPortalEntity(
                 }
 
                 // If this is a non-rectangular portal and the entity isn't inside it, we don't care
-                if (portal.localBlocks.none { AxisAlignedBB(it).intersects(entityAABB) }) return@forEach
+                if (portal.localBlocks.none { BoundingBox(it).intersects(entityAABB) }) return@forEach
 
                 // otherwise, we need to remove all collision boxes on the other, local side of the portal
                 // to prevent the entity from colliding with them
@@ -290,7 +294,7 @@ abstract class AbstractPortalEntity(
                     // Reduce the AABB which we're looking for in the first place to the hidden section
                     val aabb = hiddenAABB.intersect(queryAABB)
                     // and transform it to remote space in order to lookup collision boxes over there
-                    aabb.min.fromLocal().toRemote().toAxisAlignedBB(aabb.max.fromLocal().toRemote())
+                    aabb.min.fromLocal().toRemote().toBoundingBox(aabb.max.fromLocal().toRemote())
                 }
                 // Unset the entity while calling into the remote world since it's not valid over there
                 collisionBoxesEntity = collisionBoxesEntity.also {
@@ -299,7 +303,7 @@ abstract class AbstractPortalEntity(
 
                     // finally transform any collision boxes back to local space and add them to the result
                     remoteCollisions.mapTo(aabbList) { aabb ->
-                        with(portal) { aabb.min.fromRemote().toLocal().toAxisAlignedBB(aabb.max.fromRemote().toLocal()) }
+                        with(portal) { aabb.min.fromRemote().toLocal().toBoundingBox(aabb.max.fromRemote().toLocal()) }
                     }
                 }
             }
@@ -316,14 +320,14 @@ abstract class AbstractPortalEntity(
                 val remotePortal = portal.getRemotePortal() ?: return@forEach
 
                 // If this is a non-rectangular portal and the entity isn't inside it, we don't care
-                if (portal.localBlocks.none { AxisAlignedBB(it).intersects(entityAABB) }) return@forEach
+                if (portal.localBlocks.none { BoundingBox(it).intersects(entityAABB) }) return@forEach
 
                 val portalPos = portal.localPosition.to3dMid()
                 val entityPos = portal.lastTickPos[entity] ?: (entity.pos + entity.eyeOffset)
                 val entitySide = portal.localFacing.axis.toFacing(entityPos - portalPos)
                 val hiddenSide = entitySide.opposite
-                val entityHalf = AxisAlignedBB_INFINITE.with(entitySide.opposite, portalPos[entitySide.axis])
-                val hiddenHalf = AxisAlignedBB_INFINITE.with(hiddenSide.opposite, portalPos[hiddenSide.axis])
+                val entityHalf = BoundingBox_INFINITE.with(entitySide.opposite, portalPos[entitySide.axis])
+                val hiddenHalf = BoundingBox_INFINITE.with(hiddenSide.opposite, portalPos[hiddenSide.axis])
 
                 // For sanity, pretend there are no recursive portals
 
@@ -337,7 +341,7 @@ abstract class AbstractPortalEntity(
                 if (queryAABB.intersects(hiddenHalf)) {
                     val aabb = queryAABB.intersect(hiddenHalf)
                     val remoteAABB = with(portal) {
-                        aabb.min.fromLocal().toRemote().toAxisAlignedBB(aabb.max.fromLocal().toRemote())
+                        aabb.min.fromLocal().toRemote().toBoundingBox(aabb.max.fromLocal().toRemote())
                     }
                     if (remotePortal.world.isMaterialInBB(remoteAABB, material)) {
                         return true
@@ -357,16 +361,16 @@ abstract class AbstractPortalEntity(
         } else {
             world.minecraftServer!!.getWorld(remoteDimension ?: return null)
         }
-        return remoteWorld.getEntitiesWithinAABB(javaClass, AxisAlignedBB(remotePosition)).firstOrNull()
+        return remoteWorld.getEntitiesWithinAABB(javaClass, BoundingBox(remotePosition)).firstOrNull()
     }
 
     //
     //  Server-side
     //
 
-    private val views = mutableMapOf<EntityPlayerMP, ServerView?>()
+    private val views = mutableMapOf<ServerPlayerEntity, ServerView?>()
 
-    internal open fun usePortal(player: EntityPlayerMP): Boolean {
+    internal open fun usePortal(player: ServerPlayerEntity): Boolean {
         val view = views[player]
         if (view == null) {
             LOGGER.warn("Received use portal request from $player which has no view for portal $this")
@@ -394,16 +398,16 @@ abstract class AbstractPortalEntity(
         trackingPlayers.forEach { Transaction.end(it) }
 
         // In case of horizontal portals, be nice and protect the player from fall damage for the next 10 seconds
-        if (plane == EnumFacing.Plane.HORIZONTAL && BPConfig.preventFallDamage) {
+        if (plane == Direction.Type.HORIZONTAL && BPConfig.preventFallDamage) {
             PreventNextFallDamage(player)
         }
 
         return true
     }
 
-    private val trackingPlayers = mutableListOf<EntityPlayerMP>()
+    private val trackingPlayers = mutableListOf<ServerPlayerEntity>()
 
-    override fun addTrackingPlayer(player: EntityPlayerMP) {
+    override fun addTrackingPlayer(player: ServerPlayerEntity) {
         super.addTrackingPlayer(player)
 
         trackingPlayers.add(player)
@@ -445,7 +449,7 @@ abstract class AbstractPortalEntity(
         ).sendTo(player)
     }
 
-    override fun removeTrackingPlayer(player: EntityPlayerMP) {
+    override fun removeTrackingPlayer(player: ServerPlayerEntity) {
         super.removeTrackingPlayer(player)
 
         trackingPlayers.remove(player)
@@ -480,7 +484,7 @@ abstract class AbstractPortalEntity(
     override fun setDead() {
         if (isDead) return
         super.setDead()
-        if (world is WorldServer) {
+        if (world is ServerWorld) {
             getRemotePortal()?.setDead()
             removePortal()
         }
@@ -494,15 +498,15 @@ abstract class AbstractPortalEntity(
     // Client-side
     //
 
-    @SideOnly(Side.CLIENT)
+    @Environment(Side.CLIENT)
     var view: ClientView? = null
 
-    @SideOnly(Side.CLIENT)
+    @Environment(Side.CLIENT)
     override fun isInRangeToRenderDist(distance: Double): Boolean = true // MC makes this depend on entityBoundingBox
 
-    @SideOnly(Side.CLIENT)
+    @Environment(Side.CLIENT)
     protected open fun onClientUpdate() {
-        val player = world.getPlayers(EntityPlayerSP::class.java) { true }[0]
+        val player = world.getPlayers(ClientPlayerEntity::class.java) { true }[0]
         view?.let { view ->
             if (!view.isMainView) {
                 UtilsClient.transformPosition(player, view.camera, this)
@@ -510,15 +514,15 @@ abstract class AbstractPortalEntity(
         }
     }
 
-    @SideOnly(Side.CLIENT)
+    @Environment(Side.CLIENT)
     private var portalUser: Entity? = null
 
-    @SideOnly(Side.CLIENT)
+    @Environment(Side.CLIENT)
     fun beforeUsePortal(entity: Entity) {
         portalUser = entity
     }
 
-    @SideOnly(Side.CLIENT)
+    @Environment(Side.CLIENT)
     fun afterUsePortal(entityId: Int) {
         val entity = portalUser
         portalUser = null
@@ -546,7 +550,7 @@ abstract class AbstractPortalEntity(
         val yaw = newEntity.rotationYaw
         val pitch = newEntity.rotationPitch
         Utils.transformPosition(entity, newEntity, this)
-        if (newEntity is EntityOtherPlayerMP) {
+        if (newEntity is OtherClientPlayerEntity) {
             newEntity.otherPlayerMPPos = pos // preserve otherPlayerMP pos to prevent desync
             newEntity.otherPlayerMPYaw = yaw.toDouble()
             newEntity.otherPlayerMPPitch = pitch.toDouble()
@@ -560,9 +564,9 @@ abstract class AbstractPortalEntity(
         }
     }
 
-    @SideOnly(Side.CLIENT)
-    protected open fun teleportPlayer(player: EntityPlayer, from: EnumFacing): Boolean {
-        if (player !is EntityPlayerSP || player.entityId < 0) return false
+    @Environment(Side.CLIENT)
+    protected open fun teleportPlayer(player: PlayerEntity, from: Direction): Boolean {
+        if (player !is ClientPlayerEntity || player.entityId < 0) return false
 
         val view = view
         if (view == null) {
@@ -578,23 +582,23 @@ abstract class AbstractPortalEntity(
         }
 
         view.makeMainView()
-        Net.INSTANCE.sendToServer(UsePortal(entityId))
+        PacketHandler.sendToServer(UsePortal(entityId))
 
         remotePortal.onClientUpdate()
         return true
     }
 
-    @SideOnly(Side.CLIENT)
+    @Environment(EnvType.CLIENT)
     open fun canBeSeen(camera: ICamera): Boolean =
             camera.isBoundingBoxInFrustum(renderBoundingBox)
-                    && localBlocks.any { camera.isBoundingBoxInFrustum(AxisAlignedBB(it)) }
+                    && localBlocks.any { camera.isBoundingBoxInFrustum(BoundingBox(it)) }
 }
 
 /**
  * Suppresses the next fall damage a player will take (within 10 seconds).
  */
 class PreventNextFallDamage(
-        private val player: EntityPlayerMP
+        private val player: ServerPlayerEntity
 ) {
     private var registered by MinecraftForge.EVENT_BUS
     /**

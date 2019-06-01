@@ -4,10 +4,11 @@ import de.johni0702.minecraft.betterportals.LOGGER
 import de.johni0702.minecraft.betterportals.client.clippingHelper
 import io.netty.channel.embedded.EmbeddedChannel
 import net.minecraft.client.Minecraft
-import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.client.network.ClientPlayerEntity
 import net.minecraft.client.gui.GuiBossOverlay
 import net.minecraft.client.multiplayer.WorldClient
 import net.minecraft.client.particle.ParticleManager
+import net.minecraft.client.render.item.ItemRenderer
 import net.minecraft.client.renderer.*
 import net.minecraft.client.renderer.entity.RenderManager
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher
@@ -23,11 +24,11 @@ internal class ClientViewImpl(
         override val manager: ClientViewManagerImpl,
         override val id: Int,
         var world: WorldClient?,
-        var player: EntityPlayerSP?,
+        var player: ClientPlayerEntity?,
         var channel: EmbeddedChannel?,
         var netManager: NetworkManager?
 ) : ClientView {
-    override val camera: EntityPlayerSP get() = player!!
+    override val camera: ClientPlayerEntity get() = player!!
 
     private var itemRenderer: ItemRenderer? = null
     private var renderManager: RenderManager? = null
